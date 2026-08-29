@@ -1,0 +1,27 @@
+# Personal exports / databases
+*.zip
+*.json
+*.db
+*.sqlite
+*.sqlite3
+*.akb
+*.bak
+
+# Local Android/build output
+.gradle/
+.idea/
+local.properties
+build/
+**/build/
+*.apk
+*.aab
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+Thumbs.db
