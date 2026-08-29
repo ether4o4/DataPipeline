@@ -1,34 +1,46 @@
-# ALL KNOWLEDGE
+# DATA PIPELINE
 
 A private, local-first knowledge engine for importing, indexing, searching, and exploring personal AI conversation exports and extracted code/artifacts.
 
 ## Architecture
 
-- `core/` — shared data model and SQLite/FTS5 search layer
+- `core/` — shared data model and SQLite/FTS5 search schema
 - `importers/` — provider-specific archive parsers
 - `android/` — native Android application
-- `dashboard/` — browser dashboard/prototype
-- `backup/` — portable backup and restore format
 - `docs/` — architecture and implementation notes
-- `tests/` — parser and indexing tests
 
-## Design goals
+## Android app
 
-1. Local-first: personal conversation data stays on-device.
-2. One-click import: select an export ZIP and let the app parse/index it.
-3. Incremental imports: deduplicate existing conversations/messages/artifacts.
-4. Full-text search: SQLite FTS5 across conversations, messages, code, commands, and extracted artifacts.
-5. Portable recovery: export/import a complete knowledge-base backup on a new device.
-6. No manually started localhost server in the Android app.
+The Android app is now the primary user-facing experience. It is phone-first: portrait layout, no horizontal scrolling, and vertical scrolling only for result lists and long conversations.
 
-## Supported source direction
+The app includes:
 
-The first importer targets ChatGPT's exported ZIP structure. Additional adapters will target Claude, Grok, Kimi, and Skywork as their exports become available.
+- ZIP import from Android's document picker
+- ChatGPT export parsing (`conversations.json` / mapping format)
+- Claude export parsing (`chat_messages` format)
+- Local SQLite storage
+- On-device full-text search
+- Conversation reader
+- Code-block extraction into searchable artifacts
+- Import progress and database statistics
+- No localhost server required
+- No cloud upload of imported data
+
+## Import flow
+
+1. Install the APK.
+2. Tap **IMPORT**.
+3. Select a ChatGPT or Claude export ZIP.
+4. Data is parsed locally and indexed into the app database.
+5. Search immediately from the home screen.
+6. Tap a result to open the complete conversation.
+
+Imports are designed to be incremental: the normalized database uses provider/message/conversation identifiers to avoid duplicate records when the same export is imported again.
+
+## Provider roadmap
+
+ChatGPT and Claude are the first native importers. Grok, Kimi, and Skywork adapters can be added as their export formats become available.
 
 ## Data policy
 
 Raw personal exports and generated databases are **not** committed to this repository. The repository contains application code, schemas, parsers, tests, and documentation only.
-
-## Current prototype
-
-The prototype has successfully indexed a ChatGPT export into SQLite/FTS5 with tens of thousands of messages and extracted artifacts. The native application will build on that proven data model.
