@@ -1,4 +1,4 @@
-name: Android APK
+name: Data Pipeline Android APK
 
 on:
   workflow_dispatch:
@@ -32,6 +32,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: all-knowledge-debug-apk
+          name: data-pipeline-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
