@@ -16,36 +16,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-
-      - name: Restore signing key
+      - name: Restore debug signing key
         shell: bash
         run: |
           set -euo pipefail
           test -s datapipeline-debug.jks.b64
-          tr -d '\r\n[:space:]' < datapipeline-debug.jks.b64 | base64 -d -o datapipeline-debug.jks
+          tr -d '[:space:]' < datapipeline-debug.jks.b64 | base64 --decode > datapipeline-debug.jks
           test -s datapipeline-debug.jks
           chmod 600 datapipeline-debug.jks
           keytool -list -keystore datapipeline-debug.jks -storepass datapipeline -noprompt >/dev/null
-
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
-
       - name: Verify APK
         shell: bash
         run: |
@@ -54,7 +48,6 @@ jobs:
           test -s "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
           ls -lh "$APK"
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
