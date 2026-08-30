@@ -2,6 +2,12 @@
 
 A private, local-first knowledge engine for importing, indexing, searching, and exploring personal AI conversation exports and extracted code/artifacts.
 
+## Latest Android APK
+
+**[⬇️ Download the latest Data Pipeline APK](https://github.com/ether4o4/DataPipeline/releases/latest/download/data-pipeline.apk)**
+
+This link is intentionally stable. Future releases should publish the APK with the exact asset name `data-pipeline.apk`, so this README never needs another download-link edit.
+
 ## Architecture
 
 - `core/` — shared data model and SQLite/FTS5 search schema
