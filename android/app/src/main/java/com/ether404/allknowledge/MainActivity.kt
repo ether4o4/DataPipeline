@@ -18,7 +18,6 @@ class MainActivity : Activity() {
     private val bg = Color.rgb(8, 10, 12)
     private val panel = Color.rgb(16, 20, 24)
     private val panel2 = Color.rgb(12, 16, 19)
-    private val line = Color.rgb(40, 49, 55)
     private val accent = Color.rgb(0, 220, 190)
     private val textColor = Color.rgb(235, 240, 242)
     private val muted = Color.rgb(135, 150, 158)
@@ -29,29 +28,22 @@ class MainActivity : Activity() {
         showHome()
     }
 
-    private fun base(): LinearLayout = LinearLayout(this).apply {
+    private fun base() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setBackgroundColor(bg)
         setPadding(16, 20, 16, 12)
     }
 
     private fun label(s: String, size: Float = 12f, color: Int = muted) = TextView(this).apply {
-        text = s
-        textSize = size
-        setTextColor(color)
+        text = s; textSize = size; setTextColor(color)
         typeface = Typeface.create("sans", Typeface.NORMAL)
     }
 
-    private fun button(s: String, onClick: () -> Unit): TextView = TextView(this).apply {
-        text = s
-        textSize = 12f
-        gravity = Gravity.CENTER
-        setTextColor(textColor)
-        typeface = Typeface.DEFAULT_BOLD
-        setPadding(14, 0, 14, 0)
-        setBackgroundColor(panel)
-        isClickable = true
-        setOnClickListener { onClick() }
+    private fun button(s: String, onClick: () -> Unit) = TextView(this).apply {
+        text = s; textSize = 12f; gravity = Gravity.CENTER
+        setTextColor(textColor); typeface = Typeface.DEFAULT_BOLD
+        setPadding(14, 0, 14, 0); setBackgroundColor(panel)
+        isClickable = true; setOnClickListener { onClick() }
     }
 
     private fun showHome() {
@@ -59,9 +51,7 @@ class MainActivity : Activity() {
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         val brand = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         brand.addView(TextView(this).apply {
-            text = "DATA PIPELINE"
-            textSize = 22f
-            setTextColor(textColor)
+            text = "DATA PIPELINE"; textSize = 22f; setTextColor(textColor)
             typeface = Typeface.DEFAULT_BOLD
         })
         brand.addView(label("LOCAL AI DATA EXPLORER", 9f, accent))
@@ -71,22 +61,16 @@ class MainActivity : Activity() {
         root.addView(space(12))
 
         val search = EditText(this).apply {
-            hint = "Search conversations, messages, code…"
-            textSize = 15f
-            setSingleLine(true)
-            setTextColor(textColor)
-            setHintTextColor(muted)
-            setPadding(16, 0, 16, 0)
-            setBackgroundColor(panel)
+            hint = "Search conversations, messages, code…"; textSize = 15f
+            setSingleLine(true); setTextColor(textColor); setHintTextColor(muted)
+            setPadding(16, 0, 16, 0); setBackgroundColor(panel)
         }
         root.addView(search, LinearLayout.LayoutParams(-1, 54))
         root.addView(button("SEARCH") { runSearch(search.text.toString()) }, LinearLayout.LayoutParams(-1, 44).apply { topMargin = 7 })
         search.setOnEditorActionListener { _, _, _ -> runSearch(search.text.toString()); true }
 
         stats = TextView(this).apply {
-            setTextColor(textColor)
-            textSize = 12f
-            setPadding(2, 14, 2, 10)
+            setTextColor(textColor); textSize = 12f; setPadding(2, 14, 2, 10)
         }
         root.addView(stats)
         status = label("READY  ·  Data stays on this device.", 10f, accent)
@@ -94,12 +78,9 @@ class MainActivity : Activity() {
         root.addView(space(6))
 
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply {
-            addView(content)
-            setFillViewport(true)
-            isFillViewport = true
-        }
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(ScrollView(this).apply {
+            addView(content); setFillViewport(true); isFillViewport = true
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         refreshStats()
         showEmptyState()
@@ -108,8 +89,7 @@ class MainActivity : Activity() {
     private fun showEmptyState() {
         content.removeAllViews()
         val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(18, 18, 18, 18)
+            orientation = LinearLayout.VERTICAL; setPadding(18, 18, 18, 18)
             setBackgroundColor(panel2)
         }
         box.addView(label("IMPORT YOUR AI DATA", 13f, textColor))
@@ -129,14 +109,12 @@ class MainActivity : Activity() {
 
     private fun runSearch(q: String) {
         if (q.isBlank()) return
-        content.removeAllViews()
-        status.text = "SEARCHING  ·  ${q.trim()}"
+        content.removeAllViews(); status.text = "SEARCHING  ·  ${q.trim()}"
         Thread {
             try {
                 val results = db.search(q)
                 runOnUiThread {
-                    content.removeAllViews()
-                    status.text = "${results.size} RESULTS"
+                    content.removeAllViews(); status.text = "${results.size} RESULTS"
                     if (results.isEmpty()) content.addView(label("No matching messages or artifacts.", 13f, muted))
                     results.forEach { addResult(it) }
                 }
@@ -148,25 +126,18 @@ class MainActivity : Activity() {
 
     private fun addResult(r: KnowledgeDb.Result) {
         val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(15, 13, 15, 13)
-            setBackgroundColor(panel)
-            isClickable = true
+            orientation = LinearLayout.VERTICAL; setPadding(15, 13, 15, 13)
+            setBackgroundColor(panel); isClickable = true
             setOnClickListener { showConversation(r.provider, r.conversationId) }
         }
         card.addView(TextView(this).apply {
-            text = r.title.ifBlank { "Untitled conversation" }
-            textSize = 15f
-            setTextColor(textColor)
-            typeface = Typeface.DEFAULT_BOLD
+            text = r.title.ifBlank { "Untitled conversation" }; textSize = 15f
+            setTextColor(textColor); typeface = Typeface.DEFAULT_BOLD
         })
         card.addView(label("${r.provider.uppercase()}  ·  ${r.role.uppercase()}", 9f, accent))
         card.addView(TextView(this).apply {
-            text = r.snippet
-            textSize = 12f
-            setTextColor(muted)
-            setPadding(0, 7, 0, 0)
-            maxLines = 5
+            text = r.snippet; textSize = 12f; setTextColor(muted)
+            setPadding(0, 7, 0, 0); maxLines = 5
         })
         content.addView(card, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 7 })
     }
@@ -181,19 +152,15 @@ class MainActivity : Activity() {
         root.addView(label("${provider.uppercase()}  ·  ${pair.second.size} MESSAGES", 9f, accent))
         root.addView(space(10))
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        for (m in pair.second) {
+        pair.second.forEach { m ->
             val box = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(14, 12, 14, 12)
+                orientation = LinearLayout.VERTICAL; setPadding(14, 12, 14, 12)
                 setBackgroundColor(if (m.role == "user") panel2 else panel)
             }
             box.addView(label(m.role.uppercase(), 9f, if (m.role == "user") accent else muted))
             box.addView(TextView(this).apply {
-                text = m.content
-                textSize = 14f
-                setTextColor(textColor)
-                setPadding(0, 6, 0, 0)
-                setTextIsSelectable(true)
+                text = m.content; textSize = 14f; setTextColor(textColor)
+                setPadding(0, 6, 0, 0); setTextIsSelectable(true)
             })
             list.addView(box, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 7 })
         }
@@ -202,12 +169,11 @@ class MainActivity : Activity() {
     }
 
     private fun pickZip() {
-        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/zip"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
-        }
-        startActivityForResult(i, 42)
+        }, 42)
     }
 
     @Deprecated("Android callback API retained for minSdk 26")
@@ -215,22 +181,15 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != 42 || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
-        try {
-            if ((data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-        } catch (_: Exception) { }
+        try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
         importUri(uri)
     }
 
     private fun importUri(uri: Uri) {
         val root = base()
-        root.addView(label("IMPORTING DATA", 20f, textColor))
-        root.addView(space(8))
-        val progress = ProgressBar(this).apply { isIndeterminate = true }
-        root.addView(progress)
-        val msg = label("Opening export…", 12f, muted)
-        root.addView(msg)
+        root.addView(label("IMPORTING DATA", 20f, textColor)); root.addView(space(8))
+        root.addView(ProgressBar(this).apply { isIndeterminate = true })
+        val msg = label("Opening export…", 12f, muted); root.addView(msg)
         setContentView(root)
         Thread {
             try {
@@ -248,3 +207,5 @@ class MainActivity : Activity() {
         }.start()
     }
 }
+
+// DATA PIPELINE MOBILE UI: portrait-first, import/search/read flow.
