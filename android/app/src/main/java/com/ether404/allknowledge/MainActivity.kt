@@ -162,21 +162,22 @@ class MainActivity : Activity() {
 
     private fun section(s: String) { content.addView(text(s, 9f, muted, true), LinearLayout.LayoutParams(-1, 27).apply { topMargin = 9 }) }
 
-    private fun folder(name: String, sub: String, right: String, click: () -> Unit) {
+    // click is last so all existing trailing lambdas bind to it, not active.
+    private fun folder(name: String, sub: String, right: String, active: Boolean = false, click: () -> Unit) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(9, 7, 7, 7)
-            setBackgroundColor(panel)
+            setBackgroundColor(if (active) selected else panel)
             isClickable = true
             setOnClickListener { click() }
         }
-        row.addView(text("□", 18f, ink), LinearLayout.LayoutParams(27, 52))
+        row.addView(text("□", 18f, if (active) selectedText else ink), LinearLayout.LayoutParams(27, 52))
         val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
-        copy.addView(text(name, 12f, ink, true))
-        copy.addView(text(sub, 9f, muted))
+        copy.addView(text(name, 12f, if (active) selectedText else ink, true))
+        copy.addView(text(sub, 9f, if (active) Color.rgb(210, 212, 210) else muted))
         row.addView(copy, LinearLayout.LayoutParams(0, 52, 1f))
-        row.addView(text(right, 9f, muted, true), LinearLayout.LayoutParams(-2, 52))
+        row.addView(text(right, 9f, if (active) selectedText else muted, true), LinearLayout.LayoutParams(-2, 52))
         content.addView(row, LinearLayout.LayoutParams(-1, 60).apply { bottomMargin = 4 })
     }
 
