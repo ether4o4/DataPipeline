@@ -56,10 +56,7 @@ class MainActivity : Activity() {
         if (bold) typeface = Typeface.DEFAULT_BOLD
     }
 
-    private fun rule(h: Int = 1) = Space(this).apply {
-        minimumHeight = h
-        setBackgroundColor(line)
-    }
+    private fun rule(h: Int = 1) = Space(this).apply { minimumHeight = h; setBackgroundColor(line) }
 
     private fun button(s: String, onClick: () -> Unit, dark: Boolean = false) = TextView(this).apply {
         text = s
@@ -78,95 +75,113 @@ class MainActivity : Activity() {
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         val title = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         title.addView(text("DATA PIPELINE", 24f, ink, true))
-        title.addView(text("PERSONAL AI ARCHIVE", 9f, muted, true))
+        title.addView(text("PERSONAL DATA ARCHIVE", 9f, muted, true))
         header.addView(title, LinearLayout.LayoutParams(0, 52, 1f))
-        header.addView(button("IMP", { pickZip() }, true), LinearLayout.LayoutParams(58, 40))
+        header.addView(text("LOCAL", 9f, muted, true), LinearLayout.LayoutParams(48, 40))
         root.addView(header)
         root.addView(rule())
 
+        val body = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
+
+        val rail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 10, 9, 0) }
+        rail.addView(text("DATA", 9f, muted, true), LinearLayout.LayoutParams(-1, 26))
+        railItem(rail, "AI DATA", "ACTIVE", true) { showAiWorkspace() }
+        railItem(rail, "SOCIAL MEDIA DATA", "SOON", false) { }
+        railItem(rail, "FILE DATA", "SOON", false) { }
+        railItem(rail, "MEDIA DATA", "SOON", false) { }
+        rail.addView(Space(this), LinearLayout.LayoutParams(-1, 0, 1f))
+        rail.addView(text("v0.1", 8f, muted), LinearLayout.LayoutParams(-1, 28))
+        body.addView(rail, LinearLayout.LayoutParams(0, -1, 0.39f))
+        body.addView(ruleVertical(), LinearLayout.LayoutParams(1, -1).apply { rightMargin = 10 })
+
+        val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 10, 0, 0) }
+        val utility = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        utility.addView(button("IMPORT") { pickZip() }, LinearLayout.LayoutParams(0, 40, 1f))
+        utility.addView(Space(this), LinearLayout.LayoutParams(5, 1))
+        utility.addView(button("EXPORT") { Toast.makeText(this@MainActivity, "Export is coming next.", Toast.LENGTH_SHORT).show() }, LinearLayout.LayoutParams(0, 40, 1f))
+        right.addView(utility)
+
         val search = EditText(this).apply {
             hint = "Search archive..."
-            textSize = 15f
+            textSize = 14f
             setSingleLine(true)
             setTextColor(ink)
             setHintTextColor(muted)
             setPadding(10, 0, 10, 0)
             setBackgroundColor(panel)
         }
-        root.addView(search, LinearLayout.LayoutParams(-1, 46).apply { topMargin = 8; bottomMargin = 5 })
+        right.addView(search, LinearLayout.LayoutParams(-1, 44).apply { topMargin = 7 })
         search.setOnEditorActionListener { _, _, _ -> runSearch(search.text.toString()); true }
-
-        val metric = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        stats = text("", 10f, ink, true)
-        metric.addView(stats, LinearLayout.LayoutParams(0, 34, 1f))
-        metric.addView(button("FILTER", { showFilterSheet() }), LinearLayout.LayoutParams(68, 32))
-        root.addView(metric)
-        root.addView(rule())
-
-        val workspace = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        nav.addView(button("LIBRARY", { showLibrary() }, true), LinearLayout.LayoutParams(0, 38, 1f))
-        nav.addView(button("PROJECTS", { showProjectFolders() }), LinearLayout.LayoutParams(0, 38, 1f).apply { leftMargin = 4 })
-        nav.addView(button("RECENT", { showRecent() }), LinearLayout.LayoutParams(0, 38, 1f).apply { leftMargin = 4 })
-        workspace.addView(nav, LinearLayout.LayoutParams(-1, 44))
-        workspace.addView(rule())
+        right.addView(rule(), LinearLayout.LayoutParams(-1, 1).apply { topMargin = 9 })
+        right.addView(text("AI DATA", 19f, ink, true), LinearLayout.LayoutParams(-1, 38).apply { topMargin = 9 })
+        right.addView(text("Your imported conversations and AI sessions", 10f, muted), LinearLayout.LayoutParams(-1, 28))
 
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        workspace.addView(ScrollView(this).apply { addView(content); setFillViewport(true) }, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(workspace, LinearLayout.LayoutParams(-1, 0, 1f))
+        right.addView(ScrollView(this).apply { addView(content); setFillViewport(true) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        body.addView(right, LinearLayout.LayoutParams(0, -1, 0.61f))
+        root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
 
         status = text("READY", 9f, muted, true)
-        root.addView(status, LinearLayout.LayoutParams(-1, 26))
+        root.addView(status, LinearLayout.LayoutParams(-1, 25))
         setContentView(root)
         refreshStats()
-        showLibrary()
+        showAiWorkspace()
     }
 
-    private fun section(s: String) {
-        content.addView(text(s, 9f, muted, true), LinearLayout.LayoutParams(-1, 30).apply { topMargin = 7 })
+    private fun ruleVertical() = Space(this).apply { minimumWidth = 1; setBackgroundColor(line) }
+
+    private fun railItem(parent: LinearLayout, name: String, state: String, active: Boolean, click: () -> Unit) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(9, 10, 5, 10)
+            setBackgroundColor(if (active) selected else Color.TRANSPARENT)
+            isClickable = active
+            setOnClickListener { if (active) click() }
+        }
+        row.addView(text(name, 12f, if (active) Color.WHITE else muted, true))
+        row.addView(text(state, 8f, if (active) Color.rgb(190, 195, 191) else muted, true))
+        parent.addView(row, LinearLayout.LayoutParams(-1, 64).apply { bottomMargin = 5 })
     }
 
-    private fun folder(name: String, sub: String, right: String, click: () -> Unit, active: Boolean = false) {
+    private fun showAiWorkspace() {
+        content.removeAllViews()
+        val s = db.stats()
+        section("LIBRARY")
+        folder("ALL CONVERSATIONS", "Complete AI archive", s[0].toString()) { runSearchAll() }
+        folder("CHATGPT", "ChatGPT conversations", "GPT") { runSearch("provider:chatgpt") }
+        folder("CLAUDE", "Claude conversations", "CLAUDE") { runSearch("provider:claude") }
+        folder("CLAUDE CODE", "Claude Code sessions", "CODE") { runSearch("code") }
+        section("COLLECTIONS")
+        folder("PROJECTS", "Organized work and subjects", "›") { showProjectFolders() }
+        folder("ARTIFACTS", "Code, files and extracted material", s[2].toString()) { runSearchAll() }
+        folder("FAVORITES", "Saved conversations", "★") { runSearchAll() }
+        section("RECENT")
+        content.addView(text("Recent conversations", 13f, ink, true), LinearLayout.LayoutParams(-1, 38))
+        status.text = "READY  ·  ${s[0]} conversations  ·  ${s[1]} messages"
+    }
+
+    private fun section(s: String) { content.addView(text(s, 9f, muted, true), LinearLayout.LayoutParams(-1, 27).apply { topMargin = 9 }) }
+
+    private fun folder(name: String, sub: String, right: String, click: () -> Unit) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(9, 5, 9, 5)
-            setBackgroundColor(if (active) selected else panel)
+            setPadding(9, 7, 7, 7)
+            setBackgroundColor(panel)
             isClickable = true
             setOnClickListener { click() }
         }
-        val glyph = text(if (right == "›") "◇" else "□", 19f, if (active) selectedText else ink, true)
-        row.addView(glyph, LinearLayout.LayoutParams(31, 52))
+        row.addView(text("□", 18f, ink), LinearLayout.LayoutParams(27, 52))
         val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
-        copy.addView(text(name, 13f, if (active) selectedText else ink, true))
-        copy.addView(text(sub, 9f, if (active) Color.rgb(210, 212, 210) else muted))
+        copy.addView(text(name, 12f, ink, true))
+        copy.addView(text(sub, 9f, muted))
         row.addView(copy, LinearLayout.LayoutParams(0, 52, 1f))
-        row.addView(text(right, 10f, if (active) selectedText else muted, true), LinearLayout.LayoutParams(-2, 52))
-        content.addView(row, LinearLayout.LayoutParams(-1, 59).apply { bottomMargin = 4 })
-    }
-
-    private fun showLibrary() {
-        content.removeAllViews()
-        section("ARCHIVE")
-        folder("ALL CONVERSATIONS", "Complete indexed archive", "${db.stats()[0]}") { runSearchAll() }
-        folder("CHATGPT", "OpenAI conversations", "GPT") { runSearch("provider:chatgpt") }
-        folder("CLAUDE", "Anthropic conversations", "CLAUDE") { runSearch("provider:claude") }
-        folder("CLAUDE CODE", "Development sessions", "CODE") { runSearch("code") }
-
-        section("COLLECTIONS")
-        folder("PROJECTS", "Programming · Music · Research · Personal", "›") { showProjectFolders() }
-        folder("ARTIFACTS", "Extracted code and files", "${db.stats()[2]}") { runSearchAll() }
-        folder("FAVORITES", "Saved conversations", "★") { runSearchAll() }
-
-        section("BROWSE")
-        folder("BY DATE", "Explore conversations chronologically", "›") { showRecent() }
-        folder("SEARCH RESULTS", "Full-text indexed messages", "⌕") { runSearchAll() }
-        status.text = "READY  ·  ${db.stats()[0]} conversations indexed"
+        row.addView(text(right, 9f, muted, true), LinearLayout.LayoutParams(-2, 52))
+        content.addView(row, LinearLayout.LayoutParams(-1, 60).apply { bottomMargin = 4 })
     }
 
     private fun showProjectFolders() {
-        content.removeAllViews()
-        section("PROJECTS")
+        content.removeAllViews(); section("PROJECTS")
         folder("PROGRAMMING", "Android · Termux · Python · GitHub", "›") { runSearch("code") }
         folder("MUSIC", "Writing · production · recording", "›") { runSearch("music") }
         folder("RESEARCH", "Reference and investigation", "›") { runSearch("research") }
@@ -174,60 +189,39 @@ class MainActivity : Activity() {
         section("SUBFOLDERS")
         folder("AI / MODELS", "Local LLMs · Ollama · model research", "›") { runSearch("model") }
         folder("OSINT / FORENSICS", "Tools · logs · data analysis", "›") { runSearch("OSINT") }
-        content.addView(button("‹ LIBRARY", { showLibrary() }, false), LinearLayout.LayoutParams(-1, 42).apply { topMargin = 8 })
+        content.addView(button("‹  BACK", { showAiWorkspace() }), LinearLayout.LayoutParams(-1, 42).apply { topMargin = 7 })
         status.text = "PROJECTS  ·  Choose a collection"
     }
 
-    private fun showRecent() {
-        content.removeAllViews()
-        section("RECENT")
-        val s = db.stats()
-        content.addView(text("${s[0]} conversations available", 15f, ink, true), LinearLayout.LayoutParams(-1, 38))
-        content.addView(text("Use search to jump directly into any message or conversation.", 10f, muted), LinearLayout.LayoutParams(-1, 34))
-        content.addView(button("SEARCH ENTIRE ARCHIVE", { runSearchAll() }, true), LinearLayout.LayoutParams(-1, 42).apply { topMargin = 8 })
-        status.text = "BROWSE  ·  Search to open a conversation"
-    }
-
-    private fun refreshStats() {
-        val s = db.stats()
-        stats.text = "${s[0]} CONVERSATIONS   ·   ${s[1]} MESSAGES   ·   ${s[2]} ARTIFACTS"
-    }
+    private fun refreshStats() { val s = db.stats(); stats.text = "${s[0]} CONVERSATIONS   ·   ${s[1]} MESSAGES   ·   ${s[2]} ARTIFACTS" }
 
     private fun runSearchAll() {
-        content.removeAllViews()
-        section("SEARCH")
+        content.removeAllViews(); section("SEARCH")
         content.addView(text("Type a term in the search field above.", 12f, muted), LinearLayout.LayoutParams(-1, 48))
         status.text = "READY  ·  ${db.stats()[0]} conversations indexed"
     }
 
     private fun runSearch(q: String) {
         if (q.isBlank()) return
-        content.removeAllViews()
-        section("SEARCH RESULTS")
+        content.removeAllViews(); section("SEARCH RESULTS")
         status.text = "SEARCHING  ·  ${q.trim()}"
         Thread {
             try {
                 val results = db.search(q)
                 runOnUiThread {
-                    content.removeAllViews()
-                    section("${results.size} RESULTS")
+                    content.removeAllViews(); section("${results.size} RESULTS")
                     if (results.isEmpty()) content.addView(text("No matching messages or conversations.", 12f, muted))
                     results.forEach { addResult(it) }
                     status.text = "RESULTS  ·  Tap an item to open the complete conversation"
                 }
-            } catch (e: Exception) {
-                runOnUiThread { status.text = "SEARCH ERROR  ·  ${e.message}" }
-            }
+            } catch (e: Exception) { runOnUiThread { status.text = "SEARCH ERROR  ·  ${e.message}" } }
         }.start()
     }
 
     private fun addResult(r: KnowledgeDb.Result) {
         val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(11, 9, 11, 9)
-            setBackgroundColor(panel)
-            isClickable = true
-            setOnClickListener { showConversation(r.provider, r.conversationId) }
+            orientation = LinearLayout.VERTICAL; setPadding(11, 9, 11, 9); setBackgroundColor(panel)
+            isClickable = true; setOnClickListener { showConversation(r.provider, r.conversationId) }
         }
         card.addView(text(r.title.ifBlank { "Untitled conversation" }, 14f, ink, true))
         card.addView(text("${r.provider.uppercase()}  ·  ${r.role.uppercase()}", 9f, muted, true))
@@ -241,19 +235,13 @@ class MainActivity : Activity() {
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         top.addView(button("‹", { showHome() }, true), LinearLayout.LayoutParams(46, 42))
         top.addView(text(pair.first.ifBlank { "Untitled conversation" }, 16f, ink, true), LinearLayout.LayoutParams(0, 42, 1f).apply { leftMargin = 9 })
-        root.addView(top)
-        root.addView(rule())
+        root.addView(top); root.addView(rule())
         root.addView(text("${provider.uppercase()}  ·  ${pair.second.size} MESSAGES", 9f, muted, true), LinearLayout.LayoutParams(-1, 30))
         root.addView(rule())
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         pair.second.forEach { m ->
-            val box = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(11, 10, 11, 10)
-                setBackgroundColor(if (m.role == "user") panelStrong else panel)
-            }
-            box.addView(text(m.role.uppercase(), 9f, muted, true))
-            box.addView(text(m.content, 14f, ink))
+            val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(11, 10, 11, 10); setBackgroundColor(if (m.role == "user") panelStrong else panel) }
+            box.addView(text(m.role.uppercase(), 9f, muted, true)); box.addView(text(m.content, 14f, ink))
             list.addView(box, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 4 })
         }
         root.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -261,21 +249,11 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
-    private fun showFilterSheet() {
-        content.removeAllViews()
-        section("FILTER")
-        folder("CHATGPT", "Only ChatGPT conversations", "GPT") { runSearch("provider:chatgpt") }
-        folder("CLAUDE", "Only Claude conversations", "CLAUDE") { runSearch("provider:claude") }
-        folder("CLAUDE CODE", "Code sessions", "CODE") { runSearch("code") }
-        folder("ALL SOURCES", "Return to the full library", "ALL") { showLibrary() }
-    }
-
     override fun onBackPressed() { showHome() }
 
     private fun pickZip() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "application/json", "*/*"))
         }, 42)
     }
@@ -291,24 +269,16 @@ class MainActivity : Activity() {
 
     private fun importUri(uri: Uri) {
         val root = base()
-        root.addView(text("IMPORT DATA", 21f, ink, true))
+        root.addView(text("IMPORT AI DATA", 21f, ink, true))
         root.addView(text("Reading export locally…", 11f, muted))
         root.addView(ProgressBar(this).apply { isIndeterminate = true })
-        val msg = text("Opening export…", 12f, muted)
-        root.addView(msg)
-        setContentView(root)
+        val msg = text("Opening export…", 12f, muted); root.addView(msg); setContentView(root)
         Thread {
             try {
                 val r = ExportImporter(this, db).importZip(uri) { p -> runOnUiThread { msg.text = p } }
-                runOnUiThread {
-                    showHome()
-                    Toast.makeText(this, "Imported ${r.provider}: ${r.conversations} conversations, ${r.messages} messages, ${r.artifacts} artifacts", Toast.LENGTH_LONG).show()
-                }
+                runOnUiThread { showHome(); Toast.makeText(this, "Imported ${r.provider}: ${r.conversations} conversations, ${r.messages} messages, ${r.artifacts} artifacts", Toast.LENGTH_LONG).show() }
             } catch (e: Exception) {
-                runOnUiThread {
-                    showHome()
-                    Toast.makeText(this, "Import failed: ${e.message ?: "unsupported export"}", Toast.LENGTH_LONG).show()
-                }
+                runOnUiThread { showHome(); Toast.makeText(this, "Import failed: ${e.message ?: "unsupported export"}", Toast.LENGTH_LONG).show() }
             }
         }.start()
     }
