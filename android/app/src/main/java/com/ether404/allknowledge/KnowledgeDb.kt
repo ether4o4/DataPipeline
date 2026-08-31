@@ -12,6 +12,9 @@ class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", 
         db.execSQL("CREATE TABLE messages(id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, message_id TEXT NOT NULL, conversation_id TEXT NOT NULL, role TEXT, content TEXT NOT NULL DEFAULT '', created_at TEXT, parent_message_id TEXT, metadata_json TEXT, UNIQUE(provider, message_id))")
         db.execSQL("CREATE TABLE artifacts(id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, artifact_id TEXT NOT NULL, conversation_id TEXT, message_id TEXT, title TEXT, kind TEXT, language TEXT, content TEXT NOT NULL DEFAULT '', metadata_json TEXT, UNIQUE(provider, artifact_id))")
         db.execSQL("CREATE INDEX idx_messages_conversation ON messages(provider, conversation_id)")
+        db.execSQL("CREATE INDEX idx_conversations_provider ON conversations(provider)")
+        db.execSQL("CREATE INDEX idx_messages_provider ON messages(provider)")
+        db.execSQL("CREATE INDEX idx_artifacts_provider ON artifacts(provider)")
         db.execSQL("CREATE VIRTUAL TABLE message_fts USING fts4(title, role, content, conversation_id, message_id, provider)")
         db.execSQL("CREATE VIRTUAL TABLE artifact_fts USING fts4(title, kind, language, content, conversation_id, message_id, provider)")
     }
@@ -65,12 +68,45 @@ class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", 
     }
 
     data class Result(val provider: String, val conversationId: String, val messageId: String, val role: String, val title: String, val snippet: String)
+
     fun search(q: String, limit: Int = 60): List<Result> {
-        if (q.isBlank()) return emptyList()
+        val needle = q.trim()
+        if (needle.isBlank()) return emptyList()
         val out = mutableListOf<Result>()
-        val sql = "SELECT provider,conversation_id,message_id,role,title,snippet(message_fts,2,'','', '…', 18) FROM message_fts WHERE message_fts MATCH ? LIMIT ?"
-        readableDatabase.rawQuery(sql, arrayOf(q.trim().replace("\"", ""), limit.toString())).use { c -> while (c.moveToNext()) out += Result(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4) ?: "Untitled", c.getString(5) ?: "") }
-        return out
+        val db = readableDatabase
+        val ftsQuery = needle.replace(Regex("[^A-Za-z0-9_.*-]+"), " ").trim()
+        if (ftsQuery.isNotBlank()) {
+            try {
+                val sql = "SELECT provider,conversation_id,message_id,role,title,snippet(message_fts,2,'<b>','</b>','…',18) FROM message_fts WHERE message_fts MATCH ? LIMIT ?"
+                db.rawQuery(sql, arrayOf(ftsQuery, limit.toString())).use { c ->
+                    while (c.moveToNext()) out += Result(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4) ?: "Untitled", c.getString(5) ?: "")
+                }
+            } catch (_: Exception) { }
+        }
+        if (out.size < limit) {
+            val like = "%${needle.replace("%", "\\%").replace("_", "\\_")}%"
+            val seen = out.map { "${it.provider}|${it.messageId}" }.toMutableSet()
+            val sql = "SELECT m.provider,m.conversation_id,m.message_id,COALESCE(m.role,'message'),COALESCE(c.title,'Untitled'),substr(m.content,1,220) FROM messages m LEFT JOIN conversations c ON c.provider=m.provider AND c.conversation_id=m.conversation_id WHERE (m.content LIKE ? ESCAPE '\\' OR c.title LIKE ? ESCAPE '\\' OR m.message_id LIKE ? ESCAPE '\\' OR m.conversation_id LIKE ? ESCAPE '\\') ORDER BY m.id DESC LIMIT ?"
+            db.rawQuery(sql, arrayOf(like, like, like, like, limit.toString())).use { c ->
+                while (c.moveToNext()) {
+                    val r = Result(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4), c.getString(5) ?: "")
+                    if (seen.add("${r.provider}|${r.messageId}")) out += r
+                }
+            }
+        }
+        if (out.size < limit) {
+            val like = "%${needle.replace("%", "\\%").replace("_", "\\_")}%"
+            val seen = out.map { "${it.provider}|${it.messageId}|${it.title}" }.toMutableSet()
+            val remaining = limit - out.size
+            val sql = "SELECT a.provider,COALESCE(a.conversation_id,''),COALESCE(a.message_id,''),COALESCE(a.kind,'artifact'),COALESCE(a.title,'Untitled artifact'),substr(a.content,1,220) FROM artifacts a WHERE (a.title LIKE ? ESCAPE '\\' OR a.content LIKE ? ESCAPE '\\' OR a.kind LIKE ? ESCAPE '\\' OR a.language LIKE ? ESCAPE '\\') ORDER BY a.id DESC LIMIT ?"
+            db.rawQuery(sql, arrayOf(like, like, like, like, remaining.toString())).use { c ->
+                while (c.moveToNext()) {
+                    val r = Result(c.getString(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4), c.getString(5) ?: "")
+                    if (seen.add("${r.provider}|${r.messageId}|${r.title}")) out += r
+                }
+            }
+        }
+        return out.take(limit)
     }
 
     data class Msg(val role: String, val content: String, val created: String?)
