@@ -28,6 +28,13 @@ jobs:
       - name: Accept Android licenses
         shell: bash
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+      - name: Restore stable signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p signing
+          base64 -d signing/datapipeline-release.keystore.b64 > signing/datapipeline-release.keystore
+          test -s signing/datapipeline-release.keystore
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -41,6 +48,8 @@ jobs:
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
+          sha256sum "$APK"
           ls -lh "$APK"
       - name: Upload APK
         uses: actions/upload-artifact@v4
