@@ -1,0 +1,1 @@
+Use the supplied AI DATA Vault HTML as the visual reference for Android UI. Do not modify import parsers, KnowledgeDb schema, or data ingestion. Wire existing Import/Export actions into the new presentation.
