@@ -1,0 +1,1 @@
+AI DATA Vault UI reference supplied by user. Implement visually in the Android UI while preserving existing import/export functionality.
