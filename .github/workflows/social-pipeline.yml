@@ -1,0 +1,22 @@
+name: Social Data Pipeline
+
+on:
+  push:
+    paths:
+      - 'social_data_pipeline/**'
+      - '.github/workflows/social-pipeline.yml'
+  pull_request:
+    paths:
+      - 'social_data_pipeline/**'
+      - '.github/workflows/social-pipeline.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run regression tests
+        run: python -m unittest discover -s social_data_pipeline/tests -p 'test_*.py'
