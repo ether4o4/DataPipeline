@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'android/**'
+      - 'social_data_pipeline/**'
       - '.github/workflows/android.yml'
 
 jobs:
