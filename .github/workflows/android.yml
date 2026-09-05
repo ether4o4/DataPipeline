@@ -8,6 +8,9 @@ on:
       - 'social_data_pipeline/**'
       - '.github/workflows/android.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -52,9 +55,20 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
           sha256sum "$APK"
           ls -lh "$APK"
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: data-pipeline-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Publish latest release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          TAG="latest"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Data Pipeline Latest" --notes "Latest Android build from main."
+          gh release upload "$TAG" "$APK#data-pipeline.apk" --clobber
