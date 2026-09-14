@@ -98,15 +98,16 @@ class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", 
                     put("language", language)
                     put("content", content)
                     put("conversation_id", cid)
-                    put("message_id", mid
-                    )
+                    put("message_id", mid)
                     put("provider", provider)
                 })
             }
         }
     }
 
-    private fun conversationTitle(provider: String, cid: String): String {
+    private fun conversationTitle(provider: String, cid: String): String = getConversationTitle(provider, cid)
+
+    fun getConversationTitle(provider: String, cid: String): String {
         return readableDatabase.rawQuery(
             "SELECT COALESCE(title,'Untitled') FROM conversations WHERE lower(provider)=lower(?) AND conversation_id=?",
             arrayOf(provider, cid)
