@@ -2,6 +2,7 @@ package com.ether404.allknowledge
 
 import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
@@ -97,7 +98,8 @@ class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", 
                     put("language", language)
                     put("content", content)
                     put("conversation_id", cid)
-                    put("message_id", mid)
+                    put("message_id", mid
+                    )
                     put("provider", provider)
                 })
             }
@@ -161,8 +163,35 @@ class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", 
                 }
             }
         }
-
         return out
+    }
+
+    /** Lazy cursor used by the message viewer. SQLite pages rows as needed instead of creating 27k views. */
+    fun conversationCursor(provider: String, cid: String, query: String = ""): Cursor {
+        val db = readableDatabase
+        val needle = query.trim()
+        val sql: String
+        val args: Array<String>
+        if (needle.isBlank()) {
+            sql = "SELECT id AS _id, role, content, created_at FROM messages WHERE lower(provider)=lower(?) AND conversation_id=? ORDER BY CASE WHEN created_at IS NULL THEN 1 ELSE 0 END, created_at, id"
+            args = arrayOf(provider, cid)
+        } else {
+            val like = "%${needle.replace("%", "\\%").replace("_", "\\_")}%"
+            sql = "SELECT id AS _id, role, content, created_at FROM messages WHERE lower(provider)=lower(?) AND conversation_id=? AND (content LIKE ? ESCAPE '\\' OR role LIKE ? ESCAPE '\\' OR created_at LIKE ? ESCAPE '\\') ORDER BY CASE WHEN created_at IS NULL THEN 1 ELSE 0 END, created_at, id"
+            args = arrayOf(provider, cid, like, like, like)
+        }
+        return db.rawQuery(sql, args)
+    }
+
+    fun conversationCount(provider: String, cid: String, query: String = ""): Long {
+        val db = readableDatabase
+        val needle = query.trim()
+        return if (needle.isBlank()) {
+            db.rawQuery("SELECT count(*) FROM messages WHERE lower(provider)=lower(?) AND conversation_id=?", arrayOf(provider, cid)).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+        } else {
+            val like = "%${needle.replace("%", "\\%").replace("_", "\\_")}%"
+            db.rawQuery("SELECT count(*) FROM messages WHERE lower(provider)=lower(?) AND conversation_id=? AND (content LIKE ? ESCAPE '\\' OR role LIKE ? ESCAPE '\\' OR created_at LIKE ? ESCAPE '\\')", arrayOf(provider, cid, like, like, like)).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+        }
     }
 
     data class Msg(val role: String, val content: String, val created: String?)
