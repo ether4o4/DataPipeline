@@ -221,31 +221,22 @@ class MainActivity : Activity() {
     private fun runSearch(query: String) {
         val q = query.trim()
         if (q.isBlank()) { focusSearch(); return }
-        content.removeAllViews()
-        section("RESULTS")
-        status.text = "SEARCHING  ·  $q"
+        content.removeAllViews(); section("RESULTS"); status.text = "SEARCHING  ·  $q"
         Thread {
             try {
                 val results = db.search(q)
                 runOnUiThread {
-                    content.removeAllViews()
-                    section("${results.size} MATCHES")
-                    if (results.isEmpty()) content.addView(txt("No matching conversations found.", 12f, muted))
-                    else results.forEach { addResult(it) }
+                    content.removeAllViews(); section("${results.size} MATCHES")
+                    if (results.isEmpty()) content.addView(txt("No matching conversations found.", 12f, muted)) else results.forEach { addResult(it) }
                     status.text = "RESULTS  ·  Tap a conversation to open it"
                 }
-            } catch (e: Exception) {
-                runOnUiThread { status.text = "SEARCH ERROR  ·  ${e.message ?: "unknown error"}" }
-            }
+            } catch (e: Exception) { runOnUiThread { status.text = "SEARCH ERROR  ·  ${e.message ?: "unknown error"}" } }
         }.start()
     }
 
     private fun addResult(r: KnowledgeDb.Result) {
         val row = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(10, 9, 10, 9)
-            setBackgroundColor(paper)
-            isClickable = true
+            orientation = LinearLayout.VERTICAL; setPadding(10, 9, 10, 9); setBackgroundColor(paper); isClickable = true
             setOnClickListener { showConversation(r.provider, r.conversationId) }
         }
         row.addView(txt(r.title.ifBlank { "Untitled conversation" }, 13f, ink, true))
@@ -254,15 +245,10 @@ class MainActivity : Activity() {
         content.addView(row, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = 4 })
     }
 
-    /**
-     * Large-conversation viewer. The old implementation loaded every message into an
-     * ArrayList and created one Android View per message. This version uses SQLite's
-     * cursor-backed ListView, so a 27k+ conversation does not become a 27k-view layout.
-     */
+    /** SQLite cursor + ListView viewer: only visible rows become Android views. */
     private fun showConversation(provider: String, conversationId: String) {
         val root = baseRoot()
         val title = db.getConversationTitle(provider, conversationId)
-
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         top.addView(outlinedButton("‹") { showHome() }, LinearLayout.LayoutParams(44, 36))
         top.addView(txt(title.ifBlank { "Untitled conversation" }, 16f, ink, true), LinearLayout.LayoutParams(0, 36, 1f).apply { leftMargin = 8 })
@@ -271,33 +257,19 @@ class MainActivity : Activity() {
 
         val searchRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 8, 0, 8) }
         val conversationSearch = EditText(this).apply {
-            hint = "Search this conversation"
-            textSize = 13f
-            setSingleLine(true)
-            setTextColor(ink)
-            setHintTextColor(muted)
-            setPadding(12, 0, 12, 0)
+            hint = "Search this conversation"; textSize = 13f; setSingleLine(true); setTextColor(ink); setHintTextColor(muted); setPadding(12, 0, 12, 0)
             background = GradientDrawable().apply { setColor(paper); setStroke(1, faint) }
         }
-        searchRow.addView(conversationSearch, LinearLayout.LayoutParams(0, 40, 1f))
-        root.addView(searchRow)
+        searchRow.addView(conversationSearch, LinearLayout.LayoutParams(0, 40, 1f)); root.addView(searchRow)
 
         val count = txt("", 8f, muted, true)
-        root.addView(count, LinearLayout.LayoutParams(-1, 22))
-        root.addView(line(), LinearLayout.LayoutParams(-1, 1))
+        root.addView(count, LinearLayout.LayoutParams(-1, 22)); root.addView(line(), LinearLayout.LayoutParams(-1, 1))
 
         val list = ListView(this).apply {
-            divider = null
-            setBackgroundColor(bg)
-            clipToPadding = false
-            setPadding(0, 8, 0, 8)
-            isVerticalScrollBarEnabled = true
-            setFastScrollEnabled(true)
+            divider = null; setBackgroundColor(bg); clipToPadding = false; setPadding(0, 8, 0, 8); isVerticalScrollBarEnabled = true; isFastScrollEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
         }
-
-        var currentCursor: Cursor = db.conversationCursor(provider, conversationId)
-        val adapter = MessageAdapter(currentCursor)
+        val adapter = MessageAdapter(db.conversationCursor(provider, conversationId))
         list.adapter = adapter
         root.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(txt("LOCAL ARCHIVE  ·  SQLite-backed viewer", 8f, muted, true), LinearLayout.LayoutParams(-1, 24))
@@ -309,13 +281,11 @@ class MainActivity : Activity() {
                 val n = db.conversationCount(provider, conversationId, q)
                 runOnUiThread {
                     adapter.changeCursor(newCursor)
-                    currentCursor = newCursor
                     count.text = if (q.isBlank()) "$n MESSAGES" else "$n MATCHING MESSAGES  ·  $q"
                     status.text = "CONVERSATION  ·  $n messages"
                 }
             }.start()
         }
-
         count.text = "${db.conversationCount(provider, conversationId)} MESSAGES"
         conversationSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -330,16 +300,12 @@ class MainActivity : Activity() {
         override fun newView(context: android.content.Context, cursor: Cursor, parent: ViewGroup): View {
             val row = FrameLayout(context).apply { setPadding(6, 3, 6, 3) }
             val bubble = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(14, 9, 14, 8)
-                maxWidth = (resources.displayMetrics.widthPixels * 0.80f).toInt()
+                orientation = LinearLayout.VERTICAL; setPadding(14, 9, 14, 8)
             }
             val role = TextView(context).apply { textSize = 8f; setTypeface(Typeface.DEFAULT, Typeface.BOLD); setTextColor(muted) }
-            val body = TextView(context).apply { textSize = 14f; setTextColor(ink); setLineSpacing(0f, 1.08f); setPadding(0, 3, 0, 0); textIsSelectable = true }
+            val body = TextView(context).apply { textSize = 14f; setTextColor(ink); setLineSpacing(0f, 1.08f); setPadding(0, 3, 0, 0); textIsSelectable = true; maxWidth = (resources.displayMetrics.widthPixels * 0.80f).toInt() }
             val time = TextView(context).apply { textSize = 8f; setTextColor(muted); gravity = Gravity.END; setPadding(0, 3, 0, 0) }
-            bubble.addView(role)
-            bubble.addView(body)
-            bubble.addView(time)
+            bubble.addView(role); bubble.addView(body); bubble.addView(time)
             row.addView(bubble, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             row.tag = Holder(bubble, role, body, time)
             return row
@@ -354,11 +320,7 @@ class MainActivity : Activity() {
             holder.role.text = if (isUser) "YOU" else role.uppercase(Locale.US)
             holder.body.text = body.ifBlank { "(empty message)" }
             holder.time.text = readableTime(created)
-            holder.bubble.background = GradientDrawable().apply {
-                setColor(if (isUser) Color.rgb(224, 232, 218) else Color.WHITE)
-                cornerRadius = 18f
-                setStroke(1, faint)
-            }
+            holder.bubble.background = GradientDrawable().apply { setColor(if (isUser) Color.rgb(224, 232, 218) else Color.WHITE); cornerRadius = 18f; setStroke(1, faint) }
             val lp = holder.bubble.layoutParams as FrameLayout.LayoutParams
             lp.gravity = if (isUser) Gravity.END else Gravity.START
             holder.bubble.layoutParams = lp
@@ -367,8 +329,7 @@ class MainActivity : Activity() {
 
     private fun readableTime(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
-        val value = raw.trim()
-        val numeric = value.toDoubleOrNull()
+        val value = raw.trim(); val numeric = value.toDoubleOrNull()
         if (numeric != null) {
             val millis = if (numeric < 10_000_000_000L) (numeric * 1000.0).toLong() else numeric.toLong()
             return try { SimpleDateFormat("MMM d, yyyy · h:mm a", Locale.US).format(Date(millis)) } catch (_: Exception) { value }
@@ -380,8 +341,7 @@ class MainActivity : Activity() {
 
     private fun pickZip() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "application/json", "*/*"))
         }, 42)
     }
@@ -397,25 +357,14 @@ class MainActivity : Activity() {
 
     private fun importUri(uri: Uri) {
         val root = baseRoot()
-        root.addView(txt("IMPORT AI DATA", 21f, ink, true))
-        root.addView(txt("Reading export locally…", 11f, muted))
-        root.addView(ProgressBar(this).apply { isIndeterminate = true })
-        val progress = txt("Opening export…", 11f, muted)
-        root.addView(progress)
-        setContentView(root)
-
+        root.addView(txt("IMPORT AI DATA", 21f, ink, true)); root.addView(txt("Reading export locally…", 11f, muted)); root.addView(ProgressBar(this).apply { isIndeterminate = true })
+        val progress = txt("Opening export…", 11f, muted); root.addView(progress); setContentView(root)
         Thread {
             try {
                 val result = ExportImporter(this, db).importZip(uri) { message -> runOnUiThread { progress.text = message } }
-                runOnUiThread {
-                    showHome()
-                    Toast.makeText(this, "Imported ${result.provider}: ${result.conversations} conversations, ${result.messages} messages", Toast.LENGTH_LONG).show()
-                }
+                runOnUiThread { showHome(); Toast.makeText(this, "Imported ${result.provider}: ${result.conversations} conversations, ${result.messages} messages", Toast.LENGTH_LONG).show() }
             } catch (e: Exception) {
-                runOnUiThread {
-                    showHome()
-                    Toast.makeText(this, "Import failed: ${e.message ?: "unsupported export"}", Toast.LENGTH_LONG).show()
-                }
+                runOnUiThread { showHome(); Toast.makeText(this, "Import failed: ${e.message ?: "unsupported export"}", Toast.LENGTH_LONG).show() }
             }
         }.start()
     }
