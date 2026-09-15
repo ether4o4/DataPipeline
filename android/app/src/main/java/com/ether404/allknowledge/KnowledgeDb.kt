@@ -215,6 +215,33 @@ class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", 
         return positions
     }
 
+    fun providerCount(provider: String): Long =
+        readableDatabase.rawQuery(
+            "SELECT count(*) FROM conversations WHERE lower(provider)=lower(?)",
+            arrayOf(provider)
+        ).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+
+    /** Newest conversations across all providers (for RECENT / post-import lists). */
+    fun recentConversations(limit: Int = 50): List<Result> {
+        val out = ArrayList<Result>()
+        readableDatabase.rawQuery(
+            "SELECT lower(provider),conversation_id,COALESCE(title,'Untitled'),COALESCE(updated_at,created_at,'') FROM conversations ORDER BY id DESC LIMIT ?",
+            arrayOf(limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                out += Result(
+                    c.getString(0) ?: "",
+                    c.getString(1) ?: "",
+                    "",
+                    "conversation",
+                    c.getString(2) ?: "Untitled",
+                    c.getString(3) ?: ""
+                )
+            }
+        }
+        return out
+    }
+
     fun conversationsByProvider(provider: String, limit: Int = 5000): List<Result> {
         val out = ArrayList<Result>()
         readableDatabase.rawQuery(

@@ -153,7 +153,7 @@ class MainActivity : Activity() {
         folderRow("ALL CONVERSATIONS", "Every indexed AI conversation", db.stats()[0].toString()) { showAllResults() }
         folderRow("CHATGPT", "OpenAI conversations", "OPENAI") { searchProvider("chatgpt") }
         folderRow("CLAUDE", "Anthropic conversations", "ANTHROPIC") { searchProvider("claude") }
-        folderRow("FILES", "Imported TXT · HTML · PDF · ZIP", "LOCAL") { searchProvider("file") }
+        folderRow("FILES", "Imported TXT · HTML · PDF · ZIP", db.providerCount("file").toString()) { searchProvider("file") }
         folderRow("CLAUDE CODE", "Claude Code sessions", "CODE") { runSearch("code") }
         section("COLLECTIONS")
         folderRow("PROJECTS", "Open organized subjects and work", "›") { showProjects() }
@@ -202,10 +202,14 @@ class MainActivity : Activity() {
     private fun showRecent() {
         content.removeAllViews()
         section("RECENT")
-        content.addView(txt("${db.stats()[0]} conversations indexed", 15f, ink, true), LinearLayout.LayoutParams(-1, 34))
-        content.addView(txt("Search above to jump directly into any conversation.", 10f, muted), LinearLayout.LayoutParams(-1, 32))
-        content.addView(outlinedButton("SEARCH ARCHIVE") { focusSearch() }, LinearLayout.LayoutParams(-1, 38).apply { topMargin = 6 })
-        status.text = "RECENT  ·  Local archive"
+        val recent = db.recentConversations(40)
+        if (recent.isEmpty()) {
+            content.addView(txt("No conversations yet — tap IMPORT to add one.", 12f, muted))
+        } else {
+            recent.forEach { addResult(it) }
+        }
+        content.addView(outlinedButton("‹  AI DATA") { showAiHome() }, LinearLayout.LayoutParams(-1, 38).apply { topMargin = 8 })
+        status.text = "RECENT  ·  ${recent.size} conversations"
     }
 
     private fun showAllResults() { if (search.text.toString().isBlank()) focusSearch() else runSearch(search.text.toString()) }
@@ -429,6 +433,23 @@ class MainActivity : Activity() {
 
     override fun onBackPressed() { showHome() }
 
+    /** After a successful import, open the new thread or land on its provider list. */
+    private fun openAfterImport(result: ExportImporter.ImportResult) {
+        val provider = result.openProvider
+        val cid = result.openConversationId
+        when {
+            !provider.isNullOrBlank() && !cid.isNullOrBlank() -> showConversation(provider, cid)
+            !provider.isNullOrBlank() -> {
+                showHome()
+                searchProvider(provider)
+            }
+            else -> {
+                showHome()
+                showRecent()
+            }
+        }
+    }
+
     private fun pickFile() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -471,8 +492,8 @@ class MainActivity : Activity() {
             try {
                 val result = ExportImporter(this, db).importAny(uri) { message -> runOnUiThread { progress.text = message } }
                 runOnUiThread {
-                    showHome()
                     Toast.makeText(this, "Imported ${result.provider}: ${result.conversations} conversations, ${result.messages} messages", Toast.LENGTH_LONG).show()
+                    openAfterImport(result)
                 }
             } catch (e: Exception) {
                 runOnUiThread { showHome(); Toast.makeText(this, "Import failed: ${e.message ?: "unsupported file"}", Toast.LENGTH_LONG).show() }

@@ -77,14 +77,14 @@ class VaultActivity : Activity() {
             val needle = query.trim()
             if (needle.isBlank()) return "[]"
             val rows = db.search(needle, 5000)
-            val p = provider.trim()
+            val p = normalizeProvider(provider)
             return resultsJson(if (p.isBlank()) rows else rows.filter { it.provider.equals(p, true) })
         }
 
         @JavascriptInterface
         fun content(kind: String, provider: String): String {
             val key = kind.trim().lowercase()
-            val p = provider.trim().lowercase()
+            val p = normalizeProvider(provider)
             val d = db.readableDatabase
             val out = mutableListOf<KnowledgeDb.Result>()
             val limit = 50000
@@ -109,7 +109,7 @@ class VaultActivity : Activity() {
             }
 
             when (key) {
-                "conversations", "recent", "favorites", "organization", "projects", "by date", "by provider", "by project", "by type" -> {
+                "conversations", "recent", "favorites", "organization", "projects", "all", "by date", "by provider", "by project", "by type" -> {
                     readConversations(conversationSql(), providerArgs)
                 }
 
@@ -233,7 +233,7 @@ class VaultActivity : Activity() {
         web.evaluateJavascript("toast('Importing…')", null)
         Thread {
             try {
-                val r = importer.importZip(uri) { msg ->
+                val r = importer.importAny(uri) { msg ->
                     runOnUiThread { web.evaluateJavascript("toast(${js(msg)})", null) }
                 }
                 runOnUiThread {
@@ -243,6 +243,7 @@ class VaultActivity : Activity() {
                         null
                     )
                     installVaultInteractions()
+                    openAfterImport(r)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -250,6 +251,42 @@ class VaultActivity : Activity() {
                 }
             }
         }.start()
+    }
+
+    /** Navigate vault UI to the newly imported thread (or its provider conversation list). */
+    private fun openAfterImport(r: ExportImporter.ImportResult) {
+        val provider = r.openProvider?.trim().orEmpty()
+        val cid = r.openConversationId?.trim().orEmpty()
+        if (provider.isEmpty()) return
+        val label = when (provider.lowercase()) {
+            "file" -> "File"
+            "chatgpt" -> "ChatGPT"
+            "claude" -> "Claude"
+            else -> provider.replaceFirstChar { it.uppercase() }
+        }
+        val script = if (cid.isNotEmpty()) {
+            """
+            (function(){
+              try {
+                var el=document.querySelector('#provList .prov-item[data-provider="${provider.lowercase()}"]');
+                if(window.provider) window.provider(${js(label)}, el||null);
+                if(window.openConversation) window.openConversation(${js(provider)}, ${js(cid)});
+                else toast('Imported — open File / Conversations to view');
+              } catch(e) { toast('Imported — tap File provider to view'); }
+            })();
+            """.trimIndent()
+        } else {
+            """
+            (function(){
+              try {
+                var el=document.querySelector('#provList .prov-item[data-provider="${provider.lowercase()}"]');
+                if(window.provider) window.provider(${js(label)}, el||null);
+                if(window.quick) window.quick('Conversations');
+              } catch(e) { toast('Imported — tap Conversations to view'); }
+            })();
+            """.trimIndent()
+        }
+        web.evaluateJavascript(script, null)
     }
 
     private fun exportSelected(uri: Uri) {
@@ -276,23 +313,19 @@ class VaultActivity : Activity() {
             "SELECT count(*) FROM artifacts WHERE lower(COALESCE(kind,'')) LIKE '%code%' OR (language IS NOT NULL AND trim(language)<>'' AND lower(language)<>'text')",
             null
         ).use { if (it.moveToFirst()) it.getLong(0) else 0L }
-        val gpt = providerCount("chatgpt")
-        val claude = providerCount("claude")
-        runOnUiThread { web.evaluateJavascript("setStats(${s[0]},${s[1]},${s[2]},$code,$gpt,$claude);", null) }
+        val gpt = db.providerCount("chatgpt")
+        val claude = db.providerCount("claude")
+        val file = db.providerCount("file")
+        runOnUiThread { web.evaluateJavascript("setStats(${s[0]},${s[1]},${s[2]},$code,$gpt,$claude,$file);", null) }
     }
-
-    private fun providerCount(provider: String) = db.readableDatabase.rawQuery(
-        "SELECT count(*) FROM conversations WHERE lower(provider)=?",
-        arrayOf(provider)
-    ).use { if (it.moveToFirst()) it.getLong(0) else 0L }
 
     private fun installVaultInteractions() {
         val script = """
             (function(){
-              if(window.__vaultLoopV4)return;
-              window.__vaultLoopV4=true;
+              if(window.__vaultLoopV5)return;
+              window.__vaultLoopV5=true;
               var providerName='ChatGPT';
-              var providerNames=['ChatGPT','Claude','Claude Code','Gemini','Grok','Kimi','Perplexity','Copilot','DeepSeek','Other AI'];
+              var providerNames=['ChatGPT','Claude','File','Claude Code','Gemini','Grok','Kimi','Perplexity','Copilot','DeepSeek','Other AI'];
               function q(s){return Array.prototype.slice.call(document.querySelectorAll(s));}
               function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');}
               function toast(m){var t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.className='toast';document.body.appendChild(t);}t.textContent=m;t.classList.add('show');clearTimeout(window.__vaultToast);window.__vaultToast=setTimeout(function(){t.classList.remove('show')},1700);}
@@ -373,6 +406,7 @@ class VaultActivity : Activity() {
                   document.getElementById('threadNext').onclick=function(){if(!hits.length)return;hitAt=(hitAt+1)%hits.length;paint();};
                 }catch(e){toast('Unable to open conversation');}
               }
+              window.openConversation=openConversation;
               window.provider=function(name,el){
                 providerName=name||'ChatGPT';
                 q('#provList .prov-item').forEach(function(x){x.classList.remove('active')});
@@ -408,6 +442,23 @@ class VaultActivity : Activity() {
             })();
         """.trimIndent()
         web.evaluateJavascript("$script;void(0)", null)
+    }
+
+    /**
+     * Map vault display provider names to DB keys.
+     * Blank / All / Other AI → no provider filter.
+     */
+    private fun normalizeProvider(provider: String): String {
+        val raw = provider.trim()
+        if (raw.isEmpty()) return ""
+        return when (raw.lowercase()) {
+            "all", "other ai", "other", "any" -> ""
+            "chatgpt", "openai" -> "chatgpt"
+            "claude", "anthropic" -> "claude"
+            "file", "files", "local", "imported" -> "file"
+            "claude code" -> "claude"
+            else -> raw.lowercase()
+        }
     }
 
     private fun js(s: String) = "'" + s

@@ -27,7 +27,16 @@ import java.util.zip.ZipInputStream
  * under the local "file" provider. Never uploads user data.
  */
 class ExportImporter(private val context: Context, private val db: KnowledgeDb) {
-    data class ImportResult(val provider: String, val conversations: Int, val messages: Int, val artifacts: Int)
+    data class ImportResult(
+        val provider: String,
+        val conversations: Int,
+        val messages: Int,
+        val artifacts: Int,
+        /** DB provider key to open after import (e.g. file, chatgpt). */
+        val openProvider: String? = null,
+        /** Conversation id to auto-open; null = show provider conversation list. */
+        val openConversationId: String? = null
+    )
 
     fun importZip(uri: Uri, progress: (String) -> Unit = {}): ImportResult = importAny(uri, progress)
 
@@ -124,7 +133,19 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
         if (chatgptConv > 0) providers += "ChatGPT"
         if (claudeConv > 0) providers += "Claude"
         if (providers.isEmpty()) return ImportResult("", 0, 0, 0)
-        return ImportResult(providers.joinToString(" + "), chatgptConv + claudeConv, chatgptMsg + claudeMsg, artifacts)
+        val openKey = when {
+            chatgptConv > 0 -> "chatgpt"
+            claudeConv > 0 -> "claude"
+            else -> null
+        }
+        return ImportResult(
+            providers.joinToString(" + "),
+            chatgptConv + claudeConv,
+            chatgptMsg + claudeMsg,
+            artifacts,
+            openProvider = openKey,
+            openConversationId = null
+        )
     }
 
     private fun tryImportAiJson(input: InputStream, progress: (String) -> Unit): ImportResult {
@@ -136,7 +157,21 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
             if (chatgptConv > 0) providers += "ChatGPT"
             if (claudeConv > 0) providers += "Claude"
             if (providers.isEmpty()) ImportResult("", 0, 0, 0)
-            else ImportResult(providers.joinToString(" + "), chatgptConv + claudeConv, chatgptMsg + claudeMsg, artifacts)
+            else {
+                val openKey = when {
+                    chatgptConv > 0 -> "chatgpt"
+                    claudeConv > 0 -> "claude"
+                    else -> null
+                }
+                ImportResult(
+                    providers.joinToString(" + "),
+                    chatgptConv + claudeConv,
+                    chatgptMsg + claudeMsg,
+                    artifacts,
+                    openProvider = openKey,
+                    openConversationId = null
+                )
+            }
         } catch (_: Exception) {
             ImportResult("", 0, 0, 0)
         }
@@ -145,6 +180,8 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
     private fun importFileZip(input: InputStream, zipName: String, progress: (String) -> Unit): ImportResult {
         var conversations = 0; var messages = 0; var artifacts = 0
         val providers = linkedSetOf<String>()
+        var firstOpenProvider: String? = null
+        var firstOpenCid: String? = null
         ZipInputStream(input, Charsets.UTF_8).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
@@ -158,8 +195,18 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
                         progress("Reading ${entry.name}…")
                         FileInputStream(temp).use { jsonInput ->
                             val r = importJsonStream(jsonInput, progress)
-                            if (r.first.first > 0) { providers += "ChatGPT"; conversations += r.first.first; messages += r.first.second }
-                            if (r.second.first > 0) { providers += "Claude"; conversations += r.second.first; messages += r.second.second }
+                            if (r.first.first > 0) {
+                                providers += "ChatGPT"
+                                conversations += r.first.first
+                                messages += r.first.second
+                                if (firstOpenProvider == null) firstOpenProvider = "chatgpt"
+                            }
+                            if (r.second.first > 0) {
+                                providers += "Claude"
+                                conversations += r.second.first
+                                messages += r.second.second
+                                if (firstOpenProvider == null) firstOpenProvider = "claude"
+                            }
                             artifacts += r.third
                         }
                     } finally { temp.delete() }
@@ -179,13 +226,30 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
                 if (text.isBlank()) continue
                 val r = importPlainAsThread("$zipName/$name", text, extKind(lower), progress)
                 conversations += r.conversations; messages += r.messages; artifacts += r.artifacts
-                if (r.conversations > 0) providers += "File"
+                if (r.conversations > 0) {
+                    providers += "File"
+                    if (firstOpenCid == null && r.openConversationId != null) {
+                        firstOpenProvider = "file"
+                        firstOpenCid = r.openConversationId
+                    } else if (firstOpenProvider == null) {
+                        firstOpenProvider = "file"
+                    }
+                }
             }
         }
         if (conversations == 0) {
             throw IllegalArgumentException("No supported ChatGPT/Claude JSON or TXT/HTML/PDF files found in this ZIP.")
         }
-        return ImportResult(providers.joinToString(" + ").ifBlank { "File" }, conversations, messages, artifacts)
+        // Auto-open only when a single thread was produced; otherwise land on provider list.
+        val openCid = if (conversations == 1) firstOpenCid else null
+        return ImportResult(
+            providers.joinToString(" + ").ifBlank { "File" },
+            conversations,
+            messages,
+            artifacts,
+            openProvider = firstOpenProvider ?: "file",
+            openConversationId = openCid
+        )
     }
 
     private fun importPlainAsThread(title: String, text: String, kind: String, progress: (String) -> Unit): ImportResult {
@@ -208,7 +272,7 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
         }
         if (n == 0) throw IllegalArgumentException("Could not split file into message turns.")
         progress("Imported $n turns from $display")
-        return ImportResult("File", 1, n, 0)
+        return ImportResult("File", 1, n, 0, openProvider = "file", openConversationId = cid)
     }
 
     private fun importJsonStream(input: InputStream, progress: (String) -> Unit): Triple<Pair<Int, Int>, Pair<Int, Int>, Int> {
