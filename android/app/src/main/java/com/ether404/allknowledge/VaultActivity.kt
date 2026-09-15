@@ -52,6 +52,12 @@ class VaultActivity : Activity() {
                     "application/x-zip-compressed",
                     "application/json",
                     "application/octet-stream",
+                    "application/pdf",
+                    "text/plain",
+                    "text/html",
+                    "text/csv",
+                    "text/markdown",
+                    "text/*",
                     "*/*"
                 ))
             }, REQ_IMPORT)
@@ -283,8 +289,8 @@ class VaultActivity : Activity() {
     private fun installVaultInteractions() {
         val script = """
             (function(){
-              if(window.__vaultLoopV3)return;
-              window.__vaultLoopV3=true;
+              if(window.__vaultLoopV4)return;
+              window.__vaultLoopV4=true;
               var providerName='ChatGPT';
               var providerNames=['ChatGPT','Claude','Claude Code','Gemini','Grok','Kimi','Perplexity','Copilot','DeepSeek','Other AI'];
               function q(s){return Array.prototype.slice.call(document.querySelectorAll(s));}
@@ -319,14 +325,52 @@ class VaultActivity : Activity() {
                 try{
                   var r=JSON.parse(Android.conversation(p,c));
                   var box=ensureResults();
-                  box.innerHTML='<button id="vaultBack" style="margin:4px 0 10px;padding:8px 11px;border:1px solid var(--stroke);border-radius:12px;background:rgba(255,255,255,.04);color:var(--txt)">‹ Back</button><div style="font-size:14px;font-weight:800;margin-bottom:9px">'+esc(r.title||'Untitled')+'</div>';
+                  var msgs=r.messages||[];
+                  box.innerHTML='';
+                  var head=document.createElement('div');
+                  head.innerHTML='<button id="vaultBack" style="margin:4px 0 10px;padding:8px 11px;border:1px solid var(--stroke);border-radius:12px;background:rgba(255,255,255,.04);color:var(--txt)">‹ Back</button><div style="font-size:14px;font-weight:800;margin-bottom:8px">'+esc(r.title||'Untitled')+'</div>';
+                  box.appendChild(head);
                   document.getElementById('vaultBack').onclick=function(){runKind('Conversations')};
-                  (r.messages||[]).forEach(function(m){
+                  var srow=document.createElement('div');
+                  srow.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap';
+                  srow.innerHTML='<input id="threadSearch" type="search" placeholder="Search this conversation" style="flex:1;min-width:120px;height:34px;padding:0 10px;border:1px solid var(--stroke);border-radius:12px;background:rgba(255,255,255,.035);color:var(--txt);outline:none;font-size:12px"><span id="threadMatch" style="font-size:10px;color:var(--dim);font-weight:800;min-width:72px">'+msgs.length+' MSG</span><button id="threadPrev" style="height:34px;padding:0 10px;border:1px solid var(--stroke);border-radius:12px;background:rgba(255,255,255,.05);color:var(--txt)">▲</button><button id="threadNext" style="height:34px;padding:0 10px;border:1px solid var(--stroke);border-radius:12px;background:rgba(255,255,255,.05);color:var(--txt)">▼</button>';
+                  box.appendChild(srow);
+                  var list=document.createElement('div');list.id='threadList';box.appendChild(list);
+                  var nodes=[];
+                  msgs.forEach(function(m,i){
                     var e=document.createElement('div');
-                    e.style.cssText='border:1px solid var(--stroke);border-radius:14px;padding:10px;margin-bottom:7px;background:'+(String(m.role).toLowerCase()==='user'?'rgba(91,140,255,.08)':'rgba(255,255,255,.03)');
-                    e.innerHTML='<div style="font-size:8px;font-weight:800;letter-spacing:1.5px;color:var(--faint);margin-bottom:4px">'+esc(String(m.role||'').toUpperCase())+'</div><div style="font-size:12px;line-height:1.45;white-space:pre-wrap">'+esc(m.content||'')+'</div>';
-                    box.appendChild(e);
+                    e.setAttribute('data-idx',String(i));
+                    e.style.cssText='border:1px solid var(--stroke);border-radius:14px;padding:10px;margin-bottom:7px;background:'+(String(m.role).toLowerCase()==='user'||String(m.role).toLowerCase()==='human'?'rgba(91,140,255,.08)':'rgba(255,255,255,.03)');
+                    e.innerHTML='<div style="font-size:8px;font-weight:800;letter-spacing:1.5px;color:var(--faint);margin-bottom:4px">'+esc(String(m.role||'').toUpperCase())+'</div><div class="tbody" style="font-size:12px;line-height:1.45;white-space:pre-wrap">'+esc(m.content||'')+'</div>';
+                    list.appendChild(e);nodes.push(e);
                   });
+                  var hits=[];var hitAt=0;
+                  function paint(){
+                    nodes.forEach(function(n,i){
+                      n.style.outline='';
+                      var role=String((msgs[i]&&msgs[i].role)||'').toLowerCase();
+                      n.style.background=(role==='user'||role==='human')?'rgba(91,140,255,.08)':'rgba(255,255,255,.03)';
+                    });
+                    if(!hits.length){document.getElementById('threadMatch').textContent=(document.getElementById('threadSearch').value||'').trim()?'0 matches':(msgs.length+' MSG');return;}
+                    document.getElementById('threadMatch').textContent=(hitAt+1)+' of '+hits.length;
+                    var el=nodes[hits[hitAt]];if(!el)return;
+                    el.style.outline='2px solid #e0b040';
+                    el.style.background='rgba(224,176,64,.18)';
+                    el.scrollIntoView({behavior:'smooth',block:'center'});
+                  }
+                  function runThreadSearch(){
+                    var q=(document.getElementById('threadSearch').value||'').trim().toLowerCase();
+                    hits=[];hitAt=0;
+                    if(!q){paint();return;}
+                    msgs.forEach(function(m,i){
+                      var blob=((m.content||'')+' '+(m.role||'')+' '+(m.created||'')).toLowerCase();
+                      if(blob.indexOf(q)>=0)hits.push(i);
+                    });
+                    paint();
+                  }
+                  document.getElementById('threadSearch').oninput=runThreadSearch;
+                  document.getElementById('threadPrev').onclick=function(){if(!hits.length)return;hitAt=(hitAt-1+hits.length)%hits.length;paint();};
+                  document.getElementById('threadNext').onclick=function(){if(!hits.length)return;hitAt=(hitAt+1)%hits.length;paint();};
                 }catch(e){toast('Unable to open conversation');}
               }
               window.provider=function(name,el){

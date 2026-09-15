@@ -167,21 +167,12 @@ class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", 
         return out
     }
 
-    /** Lazy cursor used by the message viewer. SQLite pages rows as needed instead of creating 27k views. */
+    /** Full conversation cursor (never filtered) — search UX scrolls within this list. */
     fun conversationCursor(provider: String, cid: String, query: String = ""): Cursor {
+        // query retained for API compatibility; in-thread search no longer replaces the cursor.
         val db = readableDatabase
-        val needle = query.trim()
-        val sql: String
-        val args: Array<String>
-        if (needle.isBlank()) {
-            sql = "SELECT id AS _id, role, content, created_at FROM messages WHERE lower(provider)=lower(?) AND conversation_id=? ORDER BY CASE WHEN created_at IS NULL THEN 1 ELSE 0 END, created_at, id"
-            args = arrayOf(provider, cid)
-        } else {
-            val like = "%${needle.replace("%", "\\%").replace("_", "\\_")}%"
-            sql = "SELECT id AS _id, role, content, created_at FROM messages WHERE lower(provider)=lower(?) AND conversation_id=? AND (content LIKE ? ESCAPE '\\' OR role LIKE ? ESCAPE '\\' OR created_at LIKE ? ESCAPE '\\') ORDER BY CASE WHEN created_at IS NULL THEN 1 ELSE 0 END, created_at, id"
-            args = arrayOf(provider, cid, like, like, like)
-        }
-        return db.rawQuery(sql, args)
+        val sql = "SELECT id AS _id, role, content, created_at FROM messages WHERE lower(provider)=lower(?) AND conversation_id=? ORDER BY CASE WHEN created_at IS NULL THEN 1 ELSE 0 END, created_at, id"
+        return db.rawQuery(sql, arrayOf(provider, cid))
     }
 
     fun conversationCount(provider: String, cid: String, query: String = ""): Long {
@@ -193,6 +184,48 @@ class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", 
             val like = "%${needle.replace("%", "\\%").replace("_", "\\_")}%"
             db.rawQuery("SELECT count(*) FROM messages WHERE lower(provider)=lower(?) AND conversation_id=? AND (content LIKE ? ESCAPE '\\' OR role LIKE ? ESCAPE '\\' OR created_at LIKE ? ESCAPE '\\')", arrayOf(provider, cid, like, like, like)).use { if (it.moveToFirst()) it.getLong(0) else 0L }
         }
+    }
+
+    /**
+     * 0-based positions of messages matching [query] in conversation order.
+     * Used for phone-style in-thread search (count / prev / next / scroll) without leaving the thread.
+     */
+    fun conversationMatchPositions(provider: String, cid: String, query: String): List<Int> {
+        val needle = query.trim()
+        if (needle.isBlank()) return emptyList()
+        val positions = ArrayList<Int>()
+        readableDatabase.rawQuery(
+            "SELECT content, role, created_at FROM messages WHERE lower(provider)=lower(?) AND conversation_id=? ORDER BY CASE WHEN created_at IS NULL THEN 1 ELSE 0 END, created_at, id",
+            arrayOf(provider, cid)
+        ).use { c ->
+            var idx = 0
+            while (c.moveToNext()) {
+                val content = c.getString(0) ?: ""
+                val role = c.getString(1) ?: ""
+                val created = c.getString(2) ?: ""
+                if (content.contains(needle, ignoreCase = true) ||
+                    role.contains(needle, ignoreCase = true) ||
+                    created.contains(needle, ignoreCase = true)
+                ) {
+                    positions += idx
+                }
+                idx++
+            }
+        }
+        return positions
+    }
+
+    fun conversationsByProvider(provider: String, limit: Int = 5000): List<Result> {
+        val out = ArrayList<Result>()
+        readableDatabase.rawQuery(
+            "SELECT lower(provider),conversation_id,COALESCE(title,'Untitled'),COALESCE(updated_at,created_at,'') FROM conversations WHERE lower(provider)=lower(?) ORDER BY COALESCE(updated_at,created_at) DESC,id DESC LIMIT ?",
+            arrayOf(provider, limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                out += Result(c.getString(0) ?: provider, c.getString(1) ?: "", "", "conversation", c.getString(2) ?: "Untitled", c.getString(3) ?: "")
+            }
+        }
+        return out
     }
 
     data class Msg(val role: String, val content: String, val created: String?)
