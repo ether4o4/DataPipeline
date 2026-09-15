@@ -25,3 +25,9 @@ venv/
 # OS/editor
 .DS_Store
 Thumbs.db
+
+# Decoded signing material (keep only *.b64 in repo)
+*.keystore
+*.jks
+!*.keystore.b64
+!*.jks.b64
