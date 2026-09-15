@@ -1,12 +1,14 @@
 package com.ether404.allknowledge
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.EditText
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -14,6 +16,8 @@ class VaultActivity : Activity() {
     private lateinit var db: KnowledgeDb
     private lateinit var importer: ExportImporter
     private lateinit var web: WebView
+    /** Currently selected project key; file imports land here. */
+    private var pendingImportProjectKey: String = "chatgpt"
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -43,7 +47,11 @@ class VaultActivity : Activity() {
 
     inner class Bridge {
         @JavascriptInterface
-        fun pickImport() = runOnUiThread {
+        fun pickImport() = pickImportFor(pendingImportProjectKey)
+
+        @JavascriptInterface
+        fun pickImportFor(projectKey: String) = runOnUiThread {
+            pendingImportProjectKey = projectKey.trim().ifBlank { pendingImportProjectKey }
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "*/*"
@@ -62,6 +70,17 @@ class VaultActivity : Activity() {
                 ))
             }, REQ_IMPORT)
         }
+
+        @JavascriptInterface
+        fun selectProject(key: String) {
+            pendingImportProjectKey = key.trim().ifBlank { pendingImportProjectKey }
+        }
+
+        @JavascriptInterface
+        fun listProjects(): String = projectsJson()
+
+        @JavascriptInterface
+        fun promptNewProject() = runOnUiThread { showNewProjectDialog() }
 
         @JavascriptInterface
         fun exportData() = runOnUiThread {
@@ -109,7 +128,7 @@ class VaultActivity : Activity() {
             }
 
             when (key) {
-                "conversations", "recent", "favorites", "organization", "projects", "all", "by date", "by provider", "by project", "by type" -> {
+                "conversations", "recent", "favorites", "organization", "projects", "all", "by date", "by provider", "by source", "by project", "by type" -> {
                     readConversations(conversationSql(), providerArgs)
                 }
 
@@ -233,10 +252,11 @@ class VaultActivity : Activity() {
         web.evaluateJavascript("toast('Importing…')", null)
         Thread {
             try {
-                val r = importer.importAny(uri) { msg ->
+                val r = importer.importAny(uri, pendingImportProjectKey) { msg ->
                     runOnUiThread { web.evaluateJavascript("toast(${js(msg)})", null) }
                 }
                 runOnUiThread {
+                    if (!r.openProvider.isNullOrBlank()) pendingImportProjectKey = r.openProvider!!
                     refreshStats()
                     web.evaluateJavascript(
                         "toast(${js("Imported ${r.provider}: ${r.conversations} conversations, ${r.messages} messages")})",
@@ -253,34 +273,37 @@ class VaultActivity : Activity() {
         }.start()
     }
 
-    /** Navigate vault UI to the newly imported thread (or its provider conversation list). */
+    /** Navigate vault UI to the newly imported thread (or its project conversation list). */
     private fun openAfterImport(r: ExportImporter.ImportResult) {
         val provider = r.openProvider?.trim().orEmpty()
         val cid = r.openConversationId?.trim().orEmpty()
         if (provider.isEmpty()) return
-        val label = when (provider.lowercase()) {
+        val label = db.findProject(provider)?.label ?: when (provider.lowercase()) {
             "file" -> "File"
             "chatgpt" -> "ChatGPT"
             "claude" -> "Claude"
             else -> provider.replaceFirstChar { it.uppercase() }
         }
+        val keyJs = js(provider)
+        val labelJs = js(label)
+        val selJs = js("#provList .prov-item[data-provider=\"$provider\"]")
         val script = if (cid.isNotEmpty()) {
             """
             (function(){
               try {
-                var el=document.querySelector('#provList .prov-item[data-provider="${provider.lowercase()}"]');
-                if(window.provider) window.provider(${js(label)}, el||null);
-                if(window.openConversation) window.openConversation(${js(provider)}, ${js(cid)});
-                else toast('Imported — open File / Conversations to view');
-              } catch(e) { toast('Imported — tap File provider to view'); }
+                var el=document.querySelector($selJs);
+                if(window.provider) window.provider($labelJs, el||null, $keyJs);
+                if(window.openConversation) window.openConversation($keyJs, ${js(cid)});
+                else toast('Imported — open Conversations to view');
+              } catch(e) { toast('Imported — tap the project to view'); }
             })();
             """.trimIndent()
         } else {
             """
             (function(){
               try {
-                var el=document.querySelector('#provList .prov-item[data-provider="${provider.lowercase()}"]');
-                if(window.provider) window.provider(${js(label)}, el||null);
+                var el=document.querySelector($selJs);
+                if(window.provider) window.provider($labelJs, el||null, $keyJs);
                 if(window.quick) window.quick('Conversations');
               } catch(e) { toast('Imported — tap Conversations to view'); }
             })();
@@ -313,27 +336,29 @@ class VaultActivity : Activity() {
             "SELECT count(*) FROM artifacts WHERE lower(COALESCE(kind,'')) LIKE '%code%' OR (language IS NOT NULL AND trim(language)<>'' AND lower(language)<>'text')",
             null
         ).use { if (it.moveToFirst()) it.getLong(0) else 0L }
-        val gpt = db.providerCount("chatgpt")
-        val claude = db.providerCount("claude")
-        val file = db.providerCount("file")
-        runOnUiThread { web.evaluateJavascript("setStats(${s[0]},${s[1]},${s[2]},$code,$gpt,$claude,$file);", null) }
+        val projects = db.listProjects()
+        val gpt = projects.firstOrNull { it.key.equals("chatgpt", true) }?.count ?: db.providerCount("chatgpt")
+        val claude = projects.firstOrNull { it.key.equals("claude", true) }?.count ?: db.providerCount("claude")
+        val file = projects.firstOrNull { it.key.equals("file", true) }?.count ?: db.providerCount("file")
+        val json = projectsJson()
+        val selected = pendingImportProjectKey
+        runOnUiThread {
+            web.evaluateJavascript("setStats(${s[0]},${s[1]},${s[2]},$code,$gpt,$claude,$file);", null)
+            web.evaluateJavascript("if(window.renderProjects)renderProjects($json,${js(selected)});", null)
+        }
     }
 
     private fun installVaultInteractions() {
         val script = """
             (function(){
-              if(window.__vaultLoopV5)return;
-              window.__vaultLoopV5=true;
-              var providerName='ChatGPT';
-              var providerNames=['ChatGPT','Claude','File','Claude Code','Gemini','Grok','Kimi','Perplexity','Copilot','DeepSeek','Other AI'];
+              if(window.__vaultLoopV6)return;
+              window.__vaultLoopV6=true;
+              var projectKey=window.projectKey||'chatgpt';
+              var projectName=window.projectName||'ChatGPT';
               function q(s){return Array.prototype.slice.call(document.querySelectorAll(s));}
               function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');}
               function toast(m){var t=document.getElementById('toast');if(!t){t=document.createElement('div');t.id='toast';t.className='toast';document.body.appendChild(t);}t.textContent=m;t.classList.add('show');clearTimeout(window.__vaultToast);window.__vaultToast=setTimeout(function(){t.classList.remove('show')},1700);}
               window.toast=toast;
-              function currentProvider(el,i){
-                var direct=el&&Array.prototype.slice.call(el.childNodes).find(function(n){return n.nodeType===3&&n.textContent.trim();});
-                return (direct?direct.textContent.trim():providerNames[i]||providerName);
-              }
               function ensureResults(){
                 var box=document.getElementById('vaultResults');
                 if(!box){box=document.createElement('div');box.id='vaultResults';box.style.cssText='width:100%;margin-top:8px;max-height:52vh;overflow:auto;padding-right:2px';var center=document.querySelector('.center');if(center)center.appendChild(box);}
@@ -407,20 +432,43 @@ class VaultActivity : Activity() {
                 }catch(e){toast('Unable to open conversation');}
               }
               window.openConversation=openConversation;
-              window.provider=function(name,el){
-                providerName=name||'ChatGPT';
+              window.provider=function(name,el,key){
+                projectName=name||projectName||'ChatGPT';
+                projectKey=key||(el&&el.getAttribute('data-provider'))||projectKey||'chatgpt';
+                window.projectName=projectName;
+                window.projectKey=projectKey;
                 q('#provList .prov-item').forEach(function(x){x.classList.remove('active')});
                 if(el)el.classList.add('active');
-                var info=document.getElementById('pvInfo');if(info)info.textContent=providerName+' · LOCAL';
-                toast('Provider: '+providerName);
+                var info=document.getElementById('pvInfo');if(info)info.textContent=projectName+' · LOCAL';
+                try{Android.selectProject(projectKey);}catch(e){}
+                toast('Project: '+projectName);
                 var initial=document.querySelector('.chip.on');if(initial)runKind(initial.textContent.trim());
+              };
+              window.renderProjects=function(raw,selectedKey){
+                var data=[];try{data=JSON.parse(raw||'[]')}catch(e){return;}
+                var box=document.getElementById('provList'); if(!box)return;
+                var sel=selectedKey||projectKey||'chatgpt';
+                projectKey=sel; window.projectKey=sel;
+                box.innerHTML='';
+                data.forEach(function(p){
+                  var el=document.createElement('div');
+                  el.className='prov-item'+(p.key===sel?' active':'');
+                  el.setAttribute('data-provider',p.key);
+                  el.innerHTML='<span class="ic">'+esc(p.icon||(p.label||'P').charAt(0))+'</span>'+esc(p.label||p.key)+'<span class="badge">'+esc(String(p.count==null?0:p.count))+'</span>';
+                  el.onclick=function(){window.provider(p.label,el,p.key)};
+                  box.appendChild(el);
+                  if(p.key===sel){projectName=p.label||projectName;window.projectName=projectName;}
+                });
+                var cnt=document.getElementById('provcnt'); if(cnt)cnt.textContent=String(data.length);
+                var info=document.getElementById('pvInfo');
+                if(info)info.textContent=projectName+' · LOCAL';
               };
               function activeQuick(k){q('.chips .chip').forEach(function(x){x.classList.toggle('on',x.textContent.trim().toLowerCase()===k.toLowerCase())});}
               function runKind(k){
                 activeQuick(k);
                 var pn=document.getElementById('pvName');if(pn)pn.textContent=String(k).toUpperCase();
-                var pi=document.getElementById('pvInfo');if(pi)pi.textContent=providerName+' · '+k;
-                try{renderResults(Android.content(k,providerName),k);}catch(e){toast('Could not load '+k);}
+                var pi=document.getElementById('pvInfo');if(pi)pi.textContent=projectName+' · '+k;
+                try{renderResults(Android.content(k,projectKey),k);}catch(e){toast('Could not load '+k);}
               }
               window.quick=runKind;
               var forms=document.querySelector('.forms');
@@ -428,17 +476,18 @@ class VaultActivity : Activity() {
                 var w=document.createElement('div');w.id='vaultSearchWrap';w.style.cssText='display:flex;gap:7px;margin-top:8px';
                 w.innerHTML='<input id="vaultSearch" type="search" autocomplete="off" placeholder="Search conversations, messages, code…" style="flex:1;min-width:0;height:36px;padding:0 12px;border:1px solid var(--stroke);border-radius:13px;background:rgba(255,255,255,.035);color:var(--txt);outline:none;font-size:12px"><button id="vaultSearchBtn" style="height:36px;padding:0 12px;border:1px solid var(--stroke);border-radius:13px;background:rgba(255,255,255,.05);color:var(--txt);font-weight:800">Search</button>';
                 forms.appendChild(w);
-                function doSearch(){var i=document.getElementById('vaultSearch');var t=(i&&i.value||'').trim();if(!t){toast('Enter a search');return;}toast('Searching…');try{renderResults(Android.search(t,providerName),'Search');}catch(e){toast('Search failed');}}
+                function doSearch(){var i=document.getElementById('vaultSearch');var t=(i&&i.value||'').trim();if(!t){toast('Enter a search');return;}toast('Searching…');try{renderResults(Android.search(t,projectKey),'Search');}catch(e){toast('Search failed');}}
                 document.getElementById('vaultSearchBtn').onclick=doSearch;
                 document.getElementById('vaultSearch').onkeydown=function(e){if(e.key==='Enter'){e.preventDefault();doSearch();}};
               }
-              q('#provList .prov-item').forEach(function(el,i){el.onclick=function(){window.provider(currentProvider(el,i),el);};});
+              q('#provList .prov-item').forEach(function(el){el.onclick=function(){window.provider((el.getAttribute('data-provider')||'chatgpt'),el,el.getAttribute('data-provider'));};});
+              var np=document.getElementById('newProjectBtn');if(np)np.onclick=function(){try{Android.promptNewProject();}catch(e){toast('Cannot create project');}};
               q('.chips .chip').forEach(function(c){c.onclick=function(){runKind(c.textContent.trim());};});
               q('.content-grid .card').forEach(function(c){c.onclick=function(){var k=c.querySelector('.cl')?c.querySelector('.cl').textContent.trim():c.textContent.trim();q('.content-grid .card').forEach(function(x){x.classList.remove('on')});c.classList.add('on');runKind(k);};});
-              q('.filter-row .pill').forEach(function(p){p.onclick=function(){q('.filter-row .pill').forEach(function(x){x.classList.remove('on')});p.classList.add('on');var k=p.textContent.trim();renderResults(Android.content(k,providerName),k);};});
+              q('.filter-row .pill').forEach(function(p){p.onclick=function(){q('.filter-row .pill').forEach(function(x){x.classList.remove('on')});p.classList.add('on');var k=p.textContent.trim();renderResults(Android.content(k,projectKey),k);};});
               var preview=document.querySelector('.preview');if(preview)preview.onclick=function(){runKind((document.querySelector('.chip.on')||{}).textContent||'Files');};
               var initial=document.querySelector('.chip.on');if(initial){var pn=document.getElementById('pvName');if(pn)pn.textContent=initial.textContent.trim().toUpperCase();}
-              window.__vaultInstalledProvider=providerName;
+              window.__vaultInstalledProvider=projectName;
             })();
         """.trimIndent()
         web.evaluateJavascript("$script;void(0)", null)
@@ -451,14 +500,67 @@ class VaultActivity : Activity() {
     private fun normalizeProvider(provider: String): String {
         val raw = provider.trim()
         if (raw.isEmpty()) return ""
-        return when (raw.lowercase()) {
-            "all", "other ai", "other", "any" -> ""
-            "chatgpt", "openai" -> "chatgpt"
-            "claude", "anthropic" -> "claude"
-            "file", "files", "local", "imported" -> "file"
-            "claude code" -> "claude"
-            else -> raw.lowercase()
+        when (raw.lowercase()) {
+            "all", "other ai", "other", "any" -> return ""
+            "chatgpt", "openai" -> return "chatgpt"
+            "claude", "anthropic", "claude code" -> return "claude"
+            "file", "files", "local", "imported" -> return "file"
         }
+        db.findProject(raw)?.let { return it.key }
+        return raw.lowercase()
+    }
+
+    private fun projectsJson(): String {
+        val arr = JSONArray()
+        db.listProjects().forEach { p ->
+            arr.put(JSONObject().apply {
+                put("id", p.id)
+                put("key", p.key)
+                put("label", p.label)
+                put("isSystem", p.isSystem)
+                put("count", p.count)
+                put("icon", when (p.key.lowercase()) {
+                    "chatgpt" -> "G"
+                    "claude" -> "C"
+                    "file" -> "F"
+                    else -> p.label.firstOrNull()?.uppercaseChar()?.toString() ?: "P"
+                })
+            })
+        }
+        return arr.toString()
+    }
+
+    private fun showNewProjectDialog() {
+        val input = EditText(this).apply {
+            hint = "Project name"
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("New project")
+            .setMessage("Name this project. File imports will land here as threads.")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                try {
+                    val created = db.createProject(input.text.toString())
+                    pendingImportProjectKey = created.key
+                    refreshStats()
+                    web.evaluateJavascript(
+                        """
+                        (function(){
+                          toast(${js("Project: ${created.label}")});
+                          var el=document.querySelector(${js("#provList .prov-item[data-provider=\"${created.key}\"]")});
+                          if(window.provider) window.provider(${js(created.label)}, el||null, ${js(created.key)});
+                        })();
+                        """.trimIndent(),
+                        null
+                    )
+                } catch (e: Exception) {
+                    web.evaluateJavascript("toast(${js(e.message ?: "Could not create project")})", null)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+        input.requestFocus()
     }
 
     private fun js(s: String) = "'" + s

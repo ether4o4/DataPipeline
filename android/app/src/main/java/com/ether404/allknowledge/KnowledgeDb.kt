@@ -5,8 +5,18 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import java.util.UUID
 
-class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", null, 1) {
+class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", null, 2) {
+    data class Project(
+        val id: Long,
+        val key: String,
+        val label: String,
+        val isSystem: Boolean,
+        val createdAt: String,
+        val count: Long = 0
+    )
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE providers(id INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL, name TEXT NOT NULL)")
         db.execSQL("CREATE TABLE conversations(id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, conversation_id TEXT NOT NULL, title TEXT, created_at TEXT, updated_at TEXT, metadata_json TEXT, UNIQUE(provider, conversation_id))")
@@ -18,14 +28,141 @@ class KnowledgeDb(context: Context) : SQLiteOpenHelper(context, "knowledge.db", 
         db.execSQL("CREATE INDEX idx_artifacts_provider ON artifacts(provider)")
         db.execSQL("CREATE VIRTUAL TABLE message_fts USING fts4(title, role, content, conversation_id, message_id, provider)")
         db.execSQL("CREATE VIRTUAL TABLE artifact_fts USING fts4(title, kind, language, content, conversation_id, message_id, provider)")
+        createProjectsTable(db)
+        seedSystemProjects(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            createProjectsTable(db)
+            seedSystemProjects(db)
+            db.rawQuery("SELECT DISTINCT provider FROM conversations", null).use { c ->
+                while (c.moveToNext()) {
+                    val key = (c.getString(0) ?: "").trim()
+                    if (key.isBlank()) continue
+                    if (key.equals("chatgpt", true) || key.equals("claude", true) || key.equals("file", true)) continue
+                    insertProjectRow(db, key.lowercase(), key.replaceFirstChar { it.uppercase() }, false)
+                }
+            }
+        }
+    }
 
-    fun ensureProvider(provider: String) {
+    private fun createProjectsTable(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS projects(" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "key TEXT UNIQUE NOT NULL, " +
+                "label TEXT NOT NULL, " +
+                "is_system INTEGER NOT NULL DEFAULT 0, " +
+                "created_at TEXT NOT NULL)"
+        )
+    }
+
+    private fun seedSystemProjects(db: SQLiteDatabase) {
+        insertProjectRow(db, "chatgpt", "ChatGPT", true)
+        insertProjectRow(db, "claude", "Claude", true)
+        insertProjectRow(db, "file", "File", true)
+    }
+
+    private fun insertProjectRow(db: SQLiteDatabase, key: String, label: String, system: Boolean) {
+        val now = System.currentTimeMillis().toString()
+        db.insertWithOnConflict(
+            "projects",
+            null,
+            ContentValues().apply {
+                put("key", key)
+                put("label", label)
+                put("is_system", if (system) 1 else 0)
+                put("created_at", now)
+            },
+            SQLiteDatabase.CONFLICT_IGNORE
+        )
+        db.insertWithOnConflict(
+            "providers",
+            null,
+            ContentValues().apply {
+                put("key", key)
+                put("name", label)
+            },
+            SQLiteDatabase.CONFLICT_IGNORE
+        )
+    }
+
+    fun ensureSystemProjects() {
+        seedSystemProjects(writableDatabase)
+    }
+
+    fun listProjects(): List<Project> {
+        ensureSystemProjects()
+        val out = ArrayList<Project>()
+        readableDatabase.rawQuery(
+            "SELECT p.id, p.key, p.label, p.is_system, p.created_at, " +
+                "(SELECT count(*) FROM conversations c WHERE lower(c.provider)=lower(p.key)) " +
+                "FROM projects p ORDER BY p.is_system DESC, p.id ASC",
+            null
+        ).use { c ->
+            while (c.moveToNext()) out += readProject(c)
+        }
+        return out
+    }
+
+    fun findProject(keyOrLabel: String): Project? {
+        val raw = keyOrLabel.trim()
+        if (raw.isEmpty()) return null
+        ensureSystemProjects()
+        readableDatabase.rawQuery(
+            "SELECT p.id, p.key, p.label, p.is_system, p.created_at, " +
+                "(SELECT count(*) FROM conversations c WHERE lower(c.provider)=lower(p.key)) " +
+                "FROM projects p WHERE lower(p.key)=lower(?) OR lower(p.label)=lower(?) LIMIT 1",
+            arrayOf(raw, raw)
+        ).use { c -> if (c.moveToFirst()) return readProject(c) }
+        return null
+    }
+
+    fun resolveProject(target: String?): Project {
+        val found = target?.let { findProject(it) }
+        if (found != null) return found
+        return findProject("file") ?: Project(0, "file", "File", true, "", 0)
+    }
+
+    fun createProject(label: String): Project {
+        val name = label.trim().replace(Regex("\\s+"), " ")
+        if (name.isEmpty()) throw IllegalArgumentException("Name a project first")
+        if (name.length > 48) throw IllegalArgumentException("Keep the name under 48 characters")
+        ensureSystemProjects()
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM projects WHERE lower(label)=lower(?)",
+            arrayOf(name)
+        ).use { if (it.moveToFirst()) throw IllegalArgumentException("A project named \"$name\" already exists") }
+        val key = "p-" + UUID.randomUUID().toString()
+        val now = System.currentTimeMillis().toString()
+        val id = writableDatabase.insertOrThrow(
+            "projects",
+            null,
+            ContentValues().apply {
+                put("key", key)
+                put("label", name)
+                put("is_system", 0)
+                put("created_at", now)
+            }
+        )
+        ensureProvider(key, name)
+        return Project(id, key, name, false, now, 0)
+    }
+
+    private fun readProject(c: Cursor) = Project(
+        c.getLong(0),
+        c.getString(1) ?: "",
+        c.getString(2) ?: "",
+        c.getInt(3) == 1,
+        c.getString(4) ?: "",
+        c.getLong(5)
+    )
+
+    fun ensureProvider(provider: String, displayName: String? = null) {
         val cv = ContentValues().apply {
             put("key", provider)
-            put("name", provider.replaceFirstChar { it.uppercase() })
+            put("name", displayName ?: provider.replaceFirstChar { it.uppercase() })
         }
         writableDatabase.insertWithOnConflict("providers", null, cv, SQLiteDatabase.CONFLICT_IGNORE)
     }

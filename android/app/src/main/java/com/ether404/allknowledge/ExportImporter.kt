@@ -38,9 +38,10 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
         val openConversationId: String? = null
     )
 
-    fun importZip(uri: Uri, progress: (String) -> Unit = {}): ImportResult = importAny(uri, progress)
+    fun importZip(uri: Uri, targetProject: String? = null, progress: (String) -> Unit = {}): ImportResult =
+        importAny(uri, targetProject, progress)
 
-    fun importAny(uri: Uri, progress: (String) -> Unit = {}): ImportResult {
+    fun importAny(uri: Uri, targetProject: String? = null, progress: (String) -> Unit = {}): ImportResult {
         val displayName = displayName(uri)
         val lowerName = displayName.lowercase()
         progress("Opening $displayName…")
@@ -62,7 +63,7 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
                 if (ai.conversations > 0) return ai
                 // Rewind not possible on ContentResolver streams after full consume — re-open for file ZIP.
                 return context.contentResolver.openInputStream(uri)?.use { again ->
-                    importFileZip(BufferedInputStream(again, 64 * 1024), displayName, progress)
+                    importFileZip(BufferedInputStream(again, 64 * 1024), displayName, progress, targetProject)
                 } ?: error("Could not reopen ZIP")
             }
 
@@ -71,7 +72,7 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
                 if (ai.conversations > 0) return ai
                 return context.contentResolver.openInputStream(uri)?.use { again ->
                     val text = readText(BufferedInputStream(again, 64 * 1024))
-                    importPlainAsThread(displayName, text, "json", progress)
+                    importPlainAsThread(displayName, text, "json", progress, targetProject)
                 } ?: error("Could not reopen JSON")
             }
 
@@ -84,7 +85,7 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
                             "Try a TXT/HTML export of the same document."
                     )
                 }
-                return importPlainAsThread(displayName, text, "pdf", progress)
+                return importPlainAsThread(displayName, text, "pdf", progress, targetProject)
             }
 
             val text = readText(input)
@@ -96,7 +97,7 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
                 else -> "txt"
             }
             val body = if (kind == "html") HtmlText.extract(text) else text
-            return importPlainAsThread(displayName, body, kind, progress)
+            return importPlainAsThread(displayName, body, kind, progress, targetProject)
         } ?: error("Could not open selected file")
     }
 
@@ -177,7 +178,7 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
         }
     }
 
-    private fun importFileZip(input: InputStream, zipName: String, progress: (String) -> Unit): ImportResult {
+    private fun importFileZip(input: InputStream, zipName: String, progress: (String) -> Unit, targetProject: String? = null): ImportResult {
         var conversations = 0; var messages = 0; var artifacts = 0
         val providers = linkedSetOf<String>()
         var firstOpenProvider: String? = null
@@ -224,15 +225,15 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
                     else -> String(bytes, detectCharset(bytes))
                 }
                 if (text.isBlank()) continue
-                val r = importPlainAsThread("$zipName/$name", text, extKind(lower), progress)
+                val r = importPlainAsThread("$zipName/$name", text, extKind(lower), progress, targetProject)
                 conversations += r.conversations; messages += r.messages; artifacts += r.artifacts
                 if (r.conversations > 0) {
-                    providers += "File"
+                    providers += r.provider
                     if (firstOpenCid == null && r.openConversationId != null) {
-                        firstOpenProvider = "file"
+                        firstOpenProvider = r.openProvider
                         firstOpenCid = r.openConversationId
                     } else if (firstOpenProvider == null) {
-                        firstOpenProvider = "file"
+                        firstOpenProvider = r.openProvider
                     }
                 }
             }
@@ -252,14 +253,17 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
         )
     }
 
-    private fun importPlainAsThread(title: String, text: String, kind: String, progress: (String) -> Unit): ImportResult {
+    private fun importPlainAsThread(title: String, text: String, kind: String, progress: (String) -> Unit, targetProject: String? = null): ImportResult {
         val cleaned = text.replace("\u0000", "").trim()
         if (cleaned.isBlank()) throw IllegalArgumentException("File contained no readable text.")
-        db.ensureProvider("file")
+        val project = db.resolveProject(targetProject)
+        val key = project.key
+        db.ensureProvider(key, project.label)
         val cid = "file-" + UUID.randomUUID().toString()
         val display = title.ifBlank { "Imported $kind" }.take(180)
-        progress("Formatting $display as thread…")
-        db.upsertConversation("file", cid, display, null, null, """{"source":"$kind"}""")
+        progress("Formatting $display into ${project.label}…")
+        val meta = "{\"source\":\"$kind\",\"project\":\"$key\"}"
+        db.upsertConversation(key, cid, display, null, null, meta)
         val turns = ThreadSplitter.split(cleaned)
         var n = 0
         for ((idx, turn) in turns.withIndex()) {
@@ -267,12 +271,12 @@ class ExportImporter(private val context: Context, private val db: KnowledgeDb) 
             val body = turn.second.trim()
             if (body.isBlank()) continue
             val mid = "$cid-$idx"
-            db.upsertMessage("file", mid, cid, role, body, null, if (idx == 0) null else "$cid-${idx - 1}")
+            db.upsertMessage(key, mid, cid, role, body, null, if (idx == 0) null else "$cid-${idx - 1}")
             n++
         }
         if (n == 0) throw IllegalArgumentException("Could not split file into message turns.")
-        progress("Imported $n turns from $display")
-        return ImportResult("File", 1, n, 0, openProvider = "file", openConversationId = cid)
+        progress("Imported $n turns into ${project.label}")
+        return ImportResult(project.label, 1, n, 0, openProvider = key, openConversationId = cid)
     }
 
     private fun importJsonStream(input: InputStream, progress: (String) -> Unit): Triple<Pair<Int, Int>, Pair<Int, Int>, Int> {

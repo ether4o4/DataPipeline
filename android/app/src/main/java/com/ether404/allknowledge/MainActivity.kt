@@ -1,6 +1,7 @@
 package com.ether404.allknowledge
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.database.Cursor
 import android.os.Bundle
 import android.content.Intent
@@ -25,6 +26,8 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
     private lateinit var search: EditText
+    /** File imports land in this project (File by default). */
+    private var importProjectKey: String = "file"
 
     private val bg = Color.rgb(244, 245, 242)
     private val paper = Color.rgb(249, 250, 247)
@@ -148,6 +151,7 @@ class MainActivity : Activity() {
     }
 
     private fun showAiHome() {
+        importProjectKey = "file"
         content.removeAllViews()
         section("LIBRARY")
         folderRow("ALL CONVERSATIONS", "Every indexed AI conversation", db.stats()[0].toString()) { showAllResults() }
@@ -188,15 +192,44 @@ class MainActivity : Activity() {
     private fun showProjects() {
         content.removeAllViews()
         section("PROJECTS")
-        folderRow("PROGRAMMING", "Android · Termux · Python · GitHub", "›") { runSearch("android") }
-        folderRow("MUSIC", "Writing · production · recording", "›") { runSearch("music") }
-        folderRow("RESEARCH", "Reference and investigation", "›") { runSearch("research") }
-        folderRow("PERSONAL", "Personal conversations", "›") { runSearch("personal") }
-        section("SUBFOLDERS")
-        folderRow("AI / MODELS", "Local LLMs · Ollama · model work", "›") { runSearch("model") }
-        folderRow("OSINT / FORENSICS", "Logs · tools · data analysis", "›") { runSearch("OSINT") }
-        content.addView(outlinedButton("‹  AI DATA") { showAiHome() }, LinearLayout.LayoutParams(-1, 38).apply { topMargin = 8 })
-        status.text = "PROJECTS  ·  Select a subject"
+        val projects = db.listProjects()
+        if (projects.isEmpty()) {
+            content.addView(txt("No projects yet.", 12f, muted))
+        } else {
+            projects.forEach { p ->
+                val kind = if (p.isSystem) "Built-in" else "Custom"
+                folderRow(p.label.uppercase(Locale.US), kind, p.count.toString()) {
+                    searchProvider(p.key)
+                }
+            }
+        }
+        content.addView(outlinedButton("+  NEW PROJECT") { promptNewProject() }, LinearLayout.LayoutParams(-1, 38).apply { topMargin = 8 })
+        content.addView(outlinedButton("‹  AI DATA") { showAiHome() }, LinearLayout.LayoutParams(-1, 38).apply { topMargin = 6 })
+        status.text = "PROJECTS  ·  ${projects.size}  ·  tap one, then IMPORT"
+    }
+
+    private fun promptNewProject() {
+        val input = EditText(this).apply {
+            hint = "Project name"
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("New project")
+            .setMessage("Name this project. File imports can land here as threads.")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                try {
+                    val created = db.createProject(input.text.toString())
+                    importProjectKey = created.key
+                    Toast.makeText(this, "Project ${created.label} ready — import a file into it", Toast.LENGTH_LONG).show()
+                    searchProvider(created.key)
+                } catch (e: Exception) {
+                    Toast.makeText(this, e.message ?: "Could not create project", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+        input.requestFocus()
     }
 
     private fun showRecent() {
@@ -222,7 +255,10 @@ class MainActivity : Activity() {
         }, 150)
     }
 
-    private fun searchProvider(provider: String) { runSearch("provider:$provider") }
+    private fun searchProvider(provider: String) {
+        importProjectKey = provider
+        runSearch("provider:$provider")
+    }
 
     private fun runSearch(query: String) {
         val q = query.trim()
@@ -490,7 +526,7 @@ class MainActivity : Activity() {
         val progress = txt("Opening…", 11f, muted); root.addView(progress); setContentView(root)
         Thread {
             try {
-                val result = ExportImporter(this, db).importAny(uri) { message -> runOnUiThread { progress.text = message } }
+                val result = ExportImporter(this, db).importAny(uri, importProjectKey) { message -> runOnUiThread { progress.text = message } }
                 runOnUiThread {
                     Toast.makeText(this, "Imported ${result.provider}: ${result.conversations} conversations, ${result.messages} messages", Toast.LENGTH_LONG).show()
                     openAfterImport(result)
