@@ -1,0 +1,43 @@
+name: Polish verification
+on:
+  pull_request:
+    types: [labeled]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: polish-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    if: github.event.label.name == 'polish-verify' && github.head_ref == 'polish/mobile-2026-10-05'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Restore existing signing material
+        working-directory: android
+        run: |
+          base64 -d signing/datapipeline-release.keystore.b64 > signing/datapipeline-release.keystore
+      - name: Build Android vault
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --max-workers=2
+      - name: Upload build and validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: polish-validation
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            **/build/outputs/apk/**/*.apk
+            **/build/reports/**
+            frontend/build/
+            artifacts/reports/
+            artifacts/apk/
