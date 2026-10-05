@@ -294,8 +294,9 @@ class MainActivity : Activity() {
         })
     }
 
+    private data class MessageHolder(val bubble: LinearLayout, val role: TextView, val body: TextView, val time: TextView)
+
     private inner class MessageAdapter(cursor: Cursor) : CursorAdapter(this, cursor, FLAG_REGISTER_CONTENT_OBSERVER) {
-        private data class Holder(val bubble: LinearLayout, val role: TextView, val body: TextView, val time: TextView)
 
         override fun newView(context: android.content.Context, cursor: Cursor, parent: ViewGroup): View {
             val row = FrameLayout(context).apply { setPadding(6, 3, 6, 3) }
@@ -303,16 +304,16 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.VERTICAL; setPadding(14, 9, 14, 8)
             }
             val role = TextView(context).apply { textSize = 8f; setTypeface(Typeface.DEFAULT, Typeface.BOLD); setTextColor(muted) }
-            val body = TextView(context).apply { textSize = 14f; setTextColor(ink); setLineSpacing(0f, 1.08f); setPadding(0, 3, 0, 0); textIsSelectable = true; maxWidth = (resources.displayMetrics.widthPixels * 0.80f).toInt() }
+            val body = TextView(context).apply { textSize = 14f; setTextColor(ink); setLineSpacing(0f, 1.08f); setPadding(0, 3, 0, 0); setTextIsSelectable(true); maxWidth = (resources.displayMetrics.widthPixels * 0.80f).toInt() }
             val time = TextView(context).apply { textSize = 8f; setTextColor(muted); gravity = Gravity.END; setPadding(0, 3, 0, 0) }
             bubble.addView(role); bubble.addView(body); bubble.addView(time)
             row.addView(bubble, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            row.tag = Holder(bubble, role, body, time)
+            row.tag = MessageHolder(bubble, role, body, time)
             return row
         }
 
         override fun bindView(view: View, context: android.content.Context, cursor: Cursor) {
-            val holder = view.tag as Holder
+            val holder = view.tag as MessageHolder
             val role = cursor.getString(cursor.getColumnIndexOrThrow("role")) ?: "unknown"
             val body = cursor.getString(cursor.getColumnIndexOrThrow("content")) ?: ""
             val created = cursor.getString(cursor.getColumnIndexOrThrow("created_at"))
