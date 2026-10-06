@@ -22,17 +22,31 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Restore existing signing material
-        working-directory: android
+      - name: Use ephemeral signing for polish test APKs
         run: |
-          base64 -d signing/datapipeline-release.keystore.b64 > signing/datapipeline-release.keystore
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/polish-debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Polish Test, OU=Debug, O=Android, L=Test, ST=Test, C=US" -keyalg RSA -keysize 2048 -validity 30
+          cat > "$RUNNER_TEMP/polish-debug-signing.gradle" <<'GRADLE'
+          allprojects {
+            afterEvaluate { project ->
+              if (project.plugins.hasPlugin('com.android.application')) {
+                def android = project.extensions.getByName('android')
+                def testSigning = android.signingConfigs.create('polishEphemeral')
+                testSigning.storeFile = new File(System.getenv('RUNNER_TEMP'), 'polish-debug.keystore')
+                testSigning.storePassword = 'android'
+                testSigning.keyAlias = 'androiddebugkey'
+                testSigning.keyPassword = 'android'
+                android.buildTypes.getByName('debug').signingConfig = testSigning
+              }
+            }
+          }
+          GRADLE
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
       - name: Build Android vault
         working-directory: android
         run: |
-          gradle :app:assembleDebug --no-daemon --max-workers=2
+          gradle :app:assembleDebug --no-daemon --max-workers=2 --init-script "$RUNNER_TEMP/polish-debug-signing.gradle"
       - name: Upload build and validation artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,6 +67,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      pull-requests: read
     concurrency:
       group: rolling-test-apk
       cancel-in-progress: false
@@ -76,6 +91,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      pull-requests: read
     concurrency:
       group: rolling-test-apk
       cancel-in-progress: false
@@ -98,6 +114,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      pull-requests: read
     concurrency:
       group: rolling-test-apk
       cancel-in-progress: false
