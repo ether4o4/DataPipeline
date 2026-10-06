@@ -1,0 +1,9 @@
+{
+  "seed_run": 37380046881,
+  "seed_sha": "ff32ad0862464bd94e12e796f22ec4ba3f1d415b",
+  "seed_apk_sha": "92ae6d32f6b08a8474d1d43912ab0820ea0bb3bda5d8dc9c561439ea66f95bd1",
+  "main_path": ".github/workflows/android.yml",
+  "main_artifact": "data-pipeline-debug-apk",
+  "selector": "\\.apk$",
+  "asset_prefix": "DataPipeline-test"
+}
