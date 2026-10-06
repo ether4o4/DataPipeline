@@ -43,6 +43,27 @@ def metadata(release):
     return json.loads(match.group(1)) if match else None
 def newer(run, old):
     return not old or (run["created_at"], run["id"]) > (old["created_at"], old["run_id"])
+def descends(base, head):
+    return base == head or api("compare/" + base + "..." + head)["status"] in ("ahead", "identical")
+def monotonic_source(run, old):
+    if not old or descends(old["source_sha"], run["head_sha"]):
+        return True
+    if run["head_branch"] != "main" or old["source_branch"] != BRANCH:
+        return False
+    # A squash/rebase merge is not a descendant of the PR SHA. Confirm the
+    # actual same-repository merged PR and its resulting main commit instead.
+    repo = os.environ["GITHUB_REPOSITORY"]
+    owner = repo.split("/")[0]
+    pulls = api("pulls?state=closed&head=" + urllib.parse.quote(owner + ":" + BRANCH, safe="") + "&base=main&per_page=100")
+    for pr in pulls:
+        if (pr.get("merged_at") and pr.get("merge_commit_sha")
+                and pr["head"]["repo"]["full_name"] == repo
+                and pr["base"]["repo"]["full_name"] == repo
+                and pr["head"]["ref"] == BRANCH and pr["base"]["ref"] == "main"
+                and descends(old["source_sha"], pr["head"]["sha"])
+                and descends(pr["merge_commit_sha"], run["head_sha"])):
+            return True
+    return False
 def trusted(run, config, current=False):
     repo = os.environ["GITHUB_REPOSITORY"]
     assert run["repository"]["full_name"] == repo and run["head_repository"]["full_name"] == repo, "Foreign repository"
@@ -144,9 +165,7 @@ def main():
         print("Same or older source build: working download preserved.")
         return
     old = metadata(release)
-    if old and old["source_sha"] != run["head_sha"]:
-        comparison = api("compare/" + old["source_sha"] + "..." + run["head_sha"])
-        assert comparison["status"] in ("ahead", "identical"), "Source commit would regress or diverge"
+    assert monotonic_source(run, old), "Source commit would regress, diverge, or bypass the approved PR merge"
     polish = run["path"].split("@")[0] == ".github/workflows/polish-verify.yml"
     artifacts = api("actions/runs/%s/artifacts?per_page=100" % run_id)["artifacts"]
     artifacts = [a for a in artifacts if a["name"] == "polish-validation"] if polish else [a for a in artifacts if re.fullmatch(config["main_artifact"], a["name"])]
