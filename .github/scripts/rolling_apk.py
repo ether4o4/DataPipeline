@@ -101,7 +101,7 @@ def publish(config, run, data, identity, release):
     assert asset["state"] == "uploaded" and asset["size"] == len(data) and asset.get("digest") == digest(data), "Uploaded APK did not verify"
     info = dict(identity, run_id=run["id"], created_at=run["created_at"], source_sha=run["head_sha"], source_branch=run["head_branch"], workflow=run["path"], apk_sha256=digest(data)[7:], bytes=len(data), asset=name)
     body = ("**TEST APK — phone runtime testing is incomplete.** Signing may differ from installed/store builds.\n\n"
-            "[Download newest verified test APK](" + asset["browser_download_url"] + ")\n\n"
+            "[Download newest verified test APK](" + ("https://github.com/" + os.environ["GITHUB_REPOSITORY"] + "/releases/download/" + TAG + "/" + name) + ")\n\n"
             "Package: \x60" + identity["package"] + "\x60; version: \x60" + identity["version_name"] + "\x60 (code " + identity["version_code"] + "); native ABIs: " + (", ".join(identity["abis"]) or "no native libraries") + ".\n\n"
             "[Successful source build](" + run["html_url"] + "); branch \x60" + run["head_branch"] + "\x60; source commit \x60" + run["head_sha"] + "\x60.\n\n"
             "SHA-256: \x60" + info["apk_sha256"] + "\x60\n\n"
@@ -135,6 +135,12 @@ def main():
             raise
         release = next((r for r in api("releases?per_page=100") if r["tag_name"] == TAG), None)
     if not newer(run, metadata(release)):
+        old = metadata(release)
+        if old and old["run_id"] == run["id"] and "/releases/download/untagged-" in release["body"]:
+            assets = api("releases/%s/assets?per_page=100" % release["id"])
+            assert any(a["name"] == old["asset"] and a.get("digest") == "sha256:" + old["apk_sha256"] for a in assets)
+            body = re.sub(r"/releases/download/untagged-[^/]+/", "/releases/download/" + TAG + "/", release["body"])
+            api("releases/%s" % release["id"], "PATCH", {"body": body, "prerelease": True, "make_latest": "false"})
         print("Same or older source build: working download preserved.")
         return
     old = metadata(release)
