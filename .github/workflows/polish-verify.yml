@@ -1,0 +1,132 @@
+name: Polish verification
+on:
+  pull_request:
+    types: [labeled]
+    branches: [main]
+  workflow_run:
+    workflows: ["Data Pipeline Android APK"]
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: polish-${{ github.ref }}-${{ github.event_name }}-${{ github.event.label.name || github.event.workflow_run.id }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.event_name == 'pull_request' && github.event.label.name == 'polish-verify' && github.head_ref == 'polish/mobile-2026-10-05' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Use ephemeral signing for polish test APKs
+        run: |
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/polish-debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Polish Test, OU=Debug, O=Android, L=Test, ST=Test, C=US" -keyalg RSA -keysize 2048 -validity 30
+          cat > "$RUNNER_TEMP/polish-debug-signing.gradle" <<'GRADLE'
+          allprojects {
+            project ->
+            project.plugins.withId('com.android.application') {
+              project.extensions.getByName('androidComponents').finalizeDsl { android ->
+                def testSigning = android.signingConfigs.create('polishEphemeral')
+                testSigning.storeFile = new File(System.getenv('RUNNER_TEMP'), 'polish-debug.keystore')
+                testSigning.storePassword = 'android'
+                testSigning.keyAlias = 'androiddebugkey'
+                testSigning.keyPassword = 'android'
+                android.buildTypes.getByName('debug').signingConfig = testSigning
+              }
+            }
+          }
+          GRADLE
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build Android vault
+        working-directory: android
+        run: |
+          gradle :app:assembleDebug --no-daemon --max-workers=2 --init-script "$RUNNER_TEMP/polish-debug-signing.gradle"
+      - name: Upload build and validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: polish-validation
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            **/build/outputs/apk/**/*.apk
+            **/build/reports/**
+            frontend/build/
+            artifacts/reports/
+            artifacts/apk/
+  publish-seed:
+    if: github.event_name == 'pull_request' && github.event.label.name == 'publish-rolling-apk' && github.head_ref == 'polish/mobile-2026-10-05' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    concurrency:
+      group: rolling-test-apk
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check publisher safety regressions
+        run: python3 .github/scripts/test_rolling_apk.py
+      - name: Publish verified versioned test APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROLLING_MODE: seed
+        run: python3 .github/scripts/rolling_apk.py
+  publish-verified:
+    needs: verify
+    if: needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    concurrency:
+      group: rolling-test-apk
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check publisher safety regressions
+        run: python3 .github/scripts/test_rolling_apk.py
+      - name: Publish verified versioned test APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROLLING_MODE: current
+        run: python3 .github/scripts/rolling_apk.py
+  publish-main:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    concurrency:
+      group: rolling-test-apk
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check publisher safety regressions
+        run: python3 .github/scripts/test_rolling_apk.py
+      - name: Publish verified versioned test APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROLLING_MODE: main
+        run: python3 .github/scripts/rolling_apk.py
