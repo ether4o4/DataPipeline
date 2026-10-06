@@ -66,7 +66,7 @@ jobs:
       - name: Publish verified versioned test APK
         env:
           GH_TOKEN: ${{ github.token }}
-          ROLLING_seed: MODE
+          ROLLING_MODE: seed
         run: python3 .github/scripts/rolling_apk.py
   publish-verified:
     needs: verify
@@ -89,7 +89,7 @@ jobs:
       - name: Publish verified versioned test APK
         env:
           GH_TOKEN: ${{ github.token }}
-          ROLLING_current: MODE
+          ROLLING_MODE: current
         run: python3 .github/scripts/rolling_apk.py
   publish-main:
     if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository
@@ -111,5 +111,5 @@ jobs:
       - name: Publish verified versioned test APK
         env:
           GH_TOKEN: ${{ github.token }}
-          ROLLING_main: MODE
+          ROLLING_MODE: main
         run: python3 .github/scripts/rolling_apk.py
