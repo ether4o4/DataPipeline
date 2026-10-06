@@ -54,4 +54,17 @@ class SafetyTests(unittest.TestCase):
             with self.assertRaises(AssertionError): m.publish(self.config, self.run, b"apk", dict(package="p", abis=[]), release)
         self.assertNotIn("PATCH", calls)
         self.assertNotIn("DELETE", calls)
+    def test_draft_asset_url_is_not_used(self):
+        release = dict(id=1, draft=True, prerelease=True, immutable=False, body="", upload_url="https://uploads.github.com/repo/assets{?name}")
+        identity = dict(package="p", abis=[], version_name="1", version_code="1")
+        calls = []
+        def fake(path, method="GET", data=None, **kwargs):
+            if method == "GET": return []
+            if method == "POST": return dict(state="uploaded", size=3, digest=m.digest(b"apk"), browser_download_url="https://github.com/owner/repo/releases/download/untagged-bad/a.apk")
+            calls.append(data)
+            return {}
+        os.environ["GITHUB_STEP_SUMMARY"] = "/dev/null"
+        with patch.object(m, "api", side_effect=fake): m.publish(self.config, self.run, b"apk", identity, release)
+        self.assertNotIn("untagged-", calls[0]["body"])
+        self.assertIn("/releases/download/polish-test-latest/", calls[0]["body"])
 if __name__ == "__main__": unittest.main()
