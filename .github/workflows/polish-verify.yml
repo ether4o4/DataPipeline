@@ -27,9 +27,9 @@ jobs:
           keytool -genkeypair -v -keystore "$RUNNER_TEMP/polish-debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Polish Test, OU=Debug, O=Android, L=Test, ST=Test, C=US" -keyalg RSA -keysize 2048 -validity 30
           cat > "$RUNNER_TEMP/polish-debug-signing.gradle" <<'GRADLE'
           allprojects {
-            afterEvaluate { project ->
-              if (project.plugins.hasPlugin('com.android.application')) {
-                def android = project.extensions.getByName('android')
+            project ->
+            project.plugins.withId('com.android.application') {
+              project.extensions.getByName('androidComponents').finalizeDsl { android ->
                 def testSigning = android.signingConfigs.create('polishEphemeral')
                 testSigning.storeFile = new File(System.getenv('RUNNER_TEMP'), 'polish-debug.keystore')
                 testSigning.storePassword = 'android'
