@@ -67,4 +67,19 @@ class SafetyTests(unittest.TestCase):
         with patch.object(m, "api", side_effect=fake): m.publish(self.config, self.run, b"apk", identity, release)
         self.assertNotIn("untagged-", calls[0]["body"])
         self.assertIn("/releases/download/polish-test-latest/", calls[0]["body"])
+    def test_divergent_main_without_merge_rejected(self):
+        old = dict(source_sha="old", source_branch=m.BRANCH)
+        with patch.object(m, "api", side_effect=[dict(status="diverged"), []]):
+            self.assertFalse(m.monotonic_source(self.run, old))
+    def test_squash_merge_requires_actual_merged_pr_lineage(self):
+        old = dict(source_sha="old", source_branch=m.BRANCH)
+        pr = dict(merged_at="now", merge_commit_sha="merged", head=dict(repo=dict(full_name="owner/repo"), ref=m.BRANCH, sha="pr-head"), base=dict(repo=dict(full_name="owner/repo"), ref="main"))
+        with patch.object(m, "api", side_effect=[dict(status="diverged"), [pr], dict(status="ahead"), dict(status="ahead")]):
+            self.assertTrue(m.monotonic_source(self.run, old))
+    def test_package_or_abi_change_rejected_before_upload(self):
+        release = dict(id=1, prerelease=True, body=m.MARK + '{"package":"p","abis":[]} -->')
+        with patch.object(m, "api") as fake:
+            with self.assertRaises(AssertionError): m.publish(self.config, self.run, b"apk", dict(package="wrong", abis=[]), release)
+            with self.assertRaises(AssertionError): m.publish(self.config, self.run, b"apk", dict(package="p", abis=["x86"]), release)
+            fake.assert_not_called()
 if __name__ == "__main__": unittest.main()
