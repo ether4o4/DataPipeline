@@ -6,7 +6,7 @@ spec.loader.exec_module(m)
 class SafetyTests(unittest.TestCase):
     def setUp(self):
         os.environ["GITHUB_REPOSITORY"] = "owner/repo"
-        self.run = dict(id=2, created_at="2026-10-06T00:00:00Z", head_branch="main", head_sha="abc", path="build.yml", status="completed", conclusion="success", repository=dict(full_name="owner/repo", id=1), head_repository=dict(full_name="owner/repo"), pull_requests=[])
+        self.run = dict(id=2, html_url="https://github.com/owner/repo/actions/runs/2", created_at="2026-10-06T00:00:00Z", head_branch="main", head_sha="abc", path="build.yml", status="completed", conclusion="success", repository=dict(full_name="owner/repo", id=1), head_repository=dict(full_name="owner/repo"), pull_requests=[])
         self.config = dict(main_path="build.yml", selector=r"\.apk$", asset_prefix="test")
     def test_failed_build_rejected(self):
         self.run["conclusion"] = "failure"
